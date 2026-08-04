@@ -7,7 +7,7 @@ import PyPDF2
 import openpyxl
 from openpyxl.styles import Alignment, Border, Side, Font, PatternFill
 from openpyxl.drawing.image import Image as ExcelImage
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageOps  # ImageOps 추가 (사진 회전 방지용)
 
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 초기화 (항상 최상단에 위치)
@@ -130,12 +130,12 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 cell.alignment = center_align
             ws.row_dimensions[12].height = 25
             
-            # 절대 크기 고정: 열 너비를 정확히 45로 고정
+            # 팩트 기반 수정: 열 너비를 38로 대폭 줄여 PC마다 발생하는 렌더링 오차를 강제 최소화
             ws.column_dimensions['A'].width = 5
             ws.column_dimensions['B'].width = 40
-            ws.column_dimensions['C'].width = 45  
+            ws.column_dimensions['C'].width = 38  
             ws.column_dimensions['D'].width = 40
-            ws.column_dimensions['E'].width = 45  
+            ws.column_dimensions['E'].width = 38  
             
             # 데이터 행 작성
             current_row = 13
@@ -144,7 +144,7 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 ws.cell(row=current_row, column=2, value=item["issue"])
                 ws.cell(row=current_row, column=4, value="") 
                 
-                # 절대 크기 고정: 행 높이를 정확히 225포인트로 고정
+                # 행 높이는 225포인트(약 300px) 유지
                 ws.row_dimensions[current_row].height = 225
                 
                 for col in range(1, 6):
@@ -155,26 +155,26 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                     else:
                         cell.alignment = center_align
 
-                # 사진(이미지) 삽입 처리 (1:1 강제 매칭)
+                # 사진(이미지) 삽입 처리
                 if item["image"] is not None:
                     img = PILImage.open(item["image"])
+                    
+                    # 스마트폰 세로/가로 회전 메타데이터(EXIF) 적용하여 정방향 유지
+                    img = ImageOps.exif_transpose(img)
                     
                     if img.mode in ("RGBA", "P"):
                         img = img.convert("RGB")
                         
-                    # 셀 너비(45)와 높이(225)의 픽셀 환산값인 320x300으로 사진을 무조건 고정
-                    img = img.resize((320, 300)) 
+                    # 좁혀진 셀(38) 위에 사진 크기를 340px로 넉넉히 덮어 우측 여백 완전 제거 (Zero-Gap)
+                    img = img.resize((340, 298)) 
                     
                     img_byte_arr = io.BytesIO()
                     img.save(img_byte_arr, format='JPEG') 
                     img_byte_arr.seek(0)
                     
                     xl_img = ExcelImage(img_byte_arr)
-                    
-                    # 엑셀 상의 이미지 크기도 320x300으로 абсолют 고정
-                    xl_img.width = 320
-                    xl_img.height = 300
-                    
+                    xl_img.width = 340
+                    xl_img.height = 298
                     xl_img.anchor = f"C{current_row}" 
                     ws.add_image(xl_img)
                     
