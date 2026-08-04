@@ -130,12 +130,12 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 cell.alignment = center_align
             ws.row_dimensions[12].height = 25
             
-            # 열 너비 고정 (너비 45는 픽셀로 약 320px)
+            # 열 너비 고정 (너비 46은 픽셀 단위로 약 329px에 해당)
             ws.column_dimensions['A'].width = 5
             ws.column_dimensions['B'].width = 40
-            ws.column_dimensions['C'].width = 45  
+            ws.column_dimensions['C'].width = 46  
             ws.column_dimensions['D'].width = 40
-            ws.column_dimensions['E'].width = 45  
+            ws.column_dimensions['E'].width = 46  
             
             # 데이터 행 작성
             current_row = 13
@@ -144,8 +144,8 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 ws.cell(row=current_row, column=2, value=item["issue"])
                 ws.cell(row=current_row, column=4, value="") 
                 
-                # 행 높이 220은 픽셀로 약 293px
-                ws.row_dimensions[current_row].height = 220
+                # 행 높이 고정 (높이 225포인트는 픽셀 단위로 정확히 300px에 해당)
+                ws.row_dimensions[current_row].height = 225
                 
                 for col in range(1, 6):
                     cell = ws.cell(row=current_row, column=col)
@@ -155,21 +155,26 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                     else:
                         cell.alignment = center_align
 
+                # 사진(이미지) 삽입 처리 (하얀 여백 제거 로직)
                 if item["image"] is not None:
                     img = PILImage.open(item["image"])
                     
-                    # 팩트 기반 로직 변경: 비율 유지가 아닌 셀 내부 픽셀 사이즈에 맞게 강제 변환
-                    img = img.resize((315, 285))
+                    # 알파 채널(투명도)이 있는 이미지일 경우 RGB로 강제 변환 (에러 방지)
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                        
+                    # 셀 픽셀 사이즈(329x300)에 딱 맞도록(선 넘지 않게 1~2px 여유) 강제 리사이징
+                    img = img.resize((326, 298)) 
                     
                     img_byte_arr = io.BytesIO()
-                    img.save(img_byte_arr, format='PNG')
+                    img.save(img_byte_arr, format='JPEG') # 엑셀 용량 최적화를 위해 JPEG로 저장
                     img_byte_arr.seek(0)
                     
                     xl_img = ExcelImage(img_byte_arr)
                     
-                    # 엑셀 객체 삽입 시에도 너비와 높이를 픽셀로 명시적 고정
-                    xl_img.width = 315
-                    xl_img.height = 285
+                    # 엑셀 객체 삽입 시에도 픽셀 크기를 정확하게 고정
+                    xl_img.width = 326
+                    xl_img.height = 298
                     
                     xl_img.anchor = f"C{current_row}" 
                     ws.add_image(xl_img)
@@ -323,11 +328,11 @@ if app_mode == "심사 개선요구사항 문서 분류":
         st.markdown("📝 **보고서 상단에 인쇄될 정보를 입력해 주세요.**")
         col_h1, col_h2 = st.columns(2)
         with col_h1:
-            r_title = st.text_input("보고서 제목", "홈플러스 정기심사 결과 보고서", key="t_r_title")
-            r_date = st.text_input("보고 일자", "2026. 5. 13(수)", key="t_r_date")
+            r_title = st.text_input("보고서 제목", "심사 결과 보고서", key="t_r_title")
+            r_date = st.text_input("보고 일자", datetime.datetime.now().strftime("%Y. %m. %d"), key="t_r_date")
             t_name = st.text_input("작성 부서", "식품안전팀", key="t_t_name")
         with col_h2:
-            a_date = st.text_input("심사 일자", "2026. 4. 28(화)", key="t_a_date")
+            a_date = st.text_input("심사 일자", datetime.datetime.now().strftime("%Y. %m. %d"), key="t_a_date")
             a_agency = st.text_input("심사 기관(심사자)", "한국뷰로베리타스 윤대민", key="t_a_agency")
             a_purpose = st.text_input("심사 목적", "정기심사", key="t_a_purpose")
 
