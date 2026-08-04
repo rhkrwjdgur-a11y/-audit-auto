@@ -7,7 +7,7 @@ import PyPDF2
 import openpyxl
 from openpyxl.styles import Alignment, Border, Side, Font, PatternFill
 from openpyxl.drawing.image import Image as ExcelImage
-from PIL import Image as PILImage, ImageOps  # ImageOps 추가 (사진 회전 방지용)
+from PIL import Image as PILImage, ImageOps
 
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 초기화 (항상 최상단에 위치)
@@ -130,12 +130,12 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 cell.alignment = center_align
             ws.row_dimensions[12].height = 25
             
-            # 팩트 기반 수정: 열 너비를 38로 대폭 줄여 PC마다 발생하는 렌더링 오차를 강제 최소화
+            # 정밀 수치 적용: 가로 45 (약 320px)
             ws.column_dimensions['A'].width = 5
             ws.column_dimensions['B'].width = 40
-            ws.column_dimensions['C'].width = 38  
+            ws.column_dimensions['C'].width = 45  
             ws.column_dimensions['D'].width = 40
-            ws.column_dimensions['E'].width = 38  
+            ws.column_dimensions['E'].width = 45  
             
             # 데이터 행 작성
             current_row = 13
@@ -144,8 +144,8 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 ws.cell(row=current_row, column=2, value=item["issue"])
                 ws.cell(row=current_row, column=4, value="") 
                 
-                # 행 높이는 225포인트(약 300px) 유지
-                ws.row_dimensions[current_row].height = 225
+                # 정밀 수치 적용: 세로 210포인트 (약 280px)
+                ws.row_dimensions[current_row].height = 210
                 
                 for col in range(1, 6):
                     cell = ws.cell(row=current_row, column=col)
@@ -165,16 +165,18 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                     if img.mode in ("RGBA", "P"):
                         img = img.convert("RGB")
                         
-                    # 좁혀진 셀(38) 위에 사진 크기를 340px로 넉넉히 덮어 우측 여백 완전 제거 (Zero-Gap)
-                    img = img.resize((340, 298)) 
+                    # 사진 크기를 셀 규격(320x280)보다 딱 4px 작게 설정하여 테두리 선(Border)을 침범하지 않게 함
+                    img = img.resize((316, 276)) 
                     
                     img_byte_arr = io.BytesIO()
                     img.save(img_byte_arr, format='JPEG') 
                     img_byte_arr.seek(0)
                     
                     xl_img = ExcelImage(img_byte_arr)
-                    xl_img.width = 340
-                    xl_img.height = 298
+                    xl_img.width = 316
+                    xl_img.height = 276
+                    
+                    # 이미지가 좌측 상단 모서리에 붙되, 선을 덮지 않도록 약간의 오프셋을 위해 앵커 지정
                     xl_img.anchor = f"C{current_row}" 
                     ws.add_image(xl_img)
                     
