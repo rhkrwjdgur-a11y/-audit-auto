@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import datetime
 import google.generativeai as genai
 import PyPDF2
 import openpyxl
@@ -13,7 +14,7 @@ from PIL import Image as PILImage
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="심사 개선요구사항 자동 분류 시스템", layout="wide")
 st.title("📋 심사 개선요구사항 자동 분류 및 보고서 생성기")
-st.markdown("심사 결과를 입력하면 AI가 정제 및 분류하고, **현장 사진을 포함하여 부서별 시트로 나뉜 완벽한 엑셀 양식**을 생성합니다.")
+st.markdown("심사 결과를 입력하면 AI가 정제 및 분류하고, **현장 사진과 공식 보고서 헤더가 포함된 부서별 엑셀 양식**을 생성합니다.")
 
 TEAM_LIST = [
     "유제품가공팀", 
@@ -24,7 +25,6 @@ TEAM_LIST = [
     "품질관리팀"
 ]
 
-# 세션 상태 초기화 (항목별 데이터 리스트 관리)
 if "issue_data" not in st.session_state:
     st.session_state.issue_data = []
 
@@ -76,9 +76,25 @@ with st.sidebar:
     tone_guide = st.text_area("보고서 톤앤매너 규칙", value=default_tone_guide, height=200)
 
 # -----------------------------------------------------------------------------
-# 4. 1단계: 데이터 입력 및 AI 추출
+# 4. 1단계: 데이터 입력, 제품군 선택 및 AI 추출
 # -----------------------------------------------------------------------------
-st.header("1단계: 심사 결과 파일 업로드 및 AI 자동 분류")
+st.header("1단계: 심사 대상 선택 및 파일 업로드")
+
+product_category = st.radio(
+    "🔍 심사 대상 제품군을 선택하세요 (선택 시 해당 공정 관련 팀만 활성화되어 정확도가 향상됩니다.)",
+    ["전체 (모든 부서 활성화)", "유제품 (상온 부서 제외)", "상온제품 (유제품 부서 제외)"],
+    horizontal=True
+)
+
+if product_category == "유제품 (상온 부서 제외)":
+    current_teams = ["유제품가공팀", "카톤포장팀", "병포장팀", "품질관리팀"]
+elif product_category == "상온제품 (유제품 부서 제외)":
+    current_teams = ["상온제품가공팀", "상온제품포장팀", "품질관리팀"]
+else:
+    current_teams = ["유제품가공팀", "카톤포장팀", "병포장팀", "상온제품가공팀", "상온제품포장팀", "품질관리팀"]
+
+st.info(f"선택된 제품군에 따라 다음 부서로만 분류됩니다: **{', '.join(current_teams)}**")
+
 col1, col2 = st.columns(2)
 with col1:
     uploaded_file = st.file_uploader("📄 파일 업로드 (PDF, 엑셀, 텍스트)", type=['pdf', 'xlsx', 'xls', 'txt', 'csv'])
@@ -98,14 +114,17 @@ if st.button("🚀 AI 추출 및 자동 분류 실행"):
             if raw_text.strip():
                 combined_text += raw_text.strip()
 
-            # 사용자 환경에 맞춘 정확한 모델 명칭 적용
             model = genai.GenerativeModel('gemini-3.6-flash')
             prompt = f"""
             당신은 식품 제조 현장의 심사 지적사항을 분석하여 담당 부서를 배정하는 전문가입니다.
-            아래 텍스트에서 지적사항을 추출하고 어조를 변환하여 6개 부서(유제품가공팀, 카톤포장팀, 병포장팀, 상온제품가공팀, 상온제품포장팀, 품질관리팀) 중 하나로 분류하십시오.
+            아래 텍스트에서 지적사항을 추출하고 어조를 변환하여 지정된 부서 중 하나로 분류하십시오.
 
             [어조 변환 규칙]
             {tone_guide}
+
+            [담당 부서 매칭 기준]
+            각 항목의 원인과 공정을 분석하여 반드시 아래의 '담당 부서' 중 가장 적합한 1개의 부서와 매칭하십시오.
+            [{', '.join(current_teams)}]
 
             [출력 규칙]
             - 반드시 "지적사항|담당부서" 형태의 파이프(|) 구분자로만 출력하십시오.
@@ -127,12 +146,12 @@ if st.button("🚀 AI 추출 및 자동 분류 실행"):
                 df_parsed = pd.read_csv(io.StringIO(result_text), sep="|")
                 if len(df_parsed.columns) == 2:
                     df_parsed.columns = ["지적사항", "담당부서"]
-                    # 세션 상태 리스트로 변환 (사진 데이터를 담기 위함)
                     parsed_list = []
                     for _, row in df_parsed.iterrows():
+                        assigned_team = row["담당부서"] if row["담당부서"] in current_teams else "품질관리팀"
                         parsed_list.append({
                             "issue": row["지적사항"],
-                            "team": row["담당부서"] if row["담당부서"] in TEAM_LIST else "품질관리팀",
+                            "team": assigned_team,
                             "image": None
                         })
                     st.session_state.issue_data = parsed_list
@@ -143,7 +162,7 @@ if st.button("🚀 AI 추출 및 자동 분류 실행"):
                 st.error(f"오류 발생: {e}")
 
 # -----------------------------------------------------------------------------
-# 5. 2단계: 데이터 검수 및 사진 첨부
+# 5. 2단계: 데이터 검수 및 사진 첨부 
 # -----------------------------------------------------------------------------
 st.header("2단계: 분류 결과 검수 및 현장 사진 첨부")
 st.markdown("각 항목별로 지적사항을 수정하거나 부서를 변경하고, **해당하는 지적사항 사진(개선 전)**을 첨부하세요.")
@@ -155,7 +174,6 @@ if st.session_state.issue_data:
             col_a, col_b, col_c = st.columns([4, 2, 2])
             
             with col_a:
-                # 지적사항 텍스트 수정
                 st.session_state.issue_data[i]["issue"] = st.text_area(
                     "지적사항 (수정 가능)", 
                     value=item["issue"], 
@@ -163,15 +181,13 @@ if st.session_state.issue_data:
                     key=f"issue_{i}"
                 )
             with col_b:
-                # 부서 선택 수정
                 st.session_state.issue_data[i]["team"] = st.selectbox(
                     "담당부서", 
-                    options=TEAM_LIST, 
-                    index=TEAM_LIST.index(item["team"]) if item["team"] in TEAM_LIST else 5,
+                    options=current_teams, 
+                    index=current_teams.index(item["team"]) if item["team"] in current_teams else (len(current_teams)-1),
                     key=f"team_{i}"
                 )
             with col_c:
-                # 사진 첨부 (메모리에 유지)
                 uploaded_img = st.file_uploader(
                     "개선 전 사진 첨부", 
                     type=['png', 'jpg', 'jpeg'], 
@@ -182,17 +198,22 @@ if st.session_state.issue_data:
             st.markdown("---")
 
     # -----------------------------------------------------------------------------
-    # 6. 3단계: 부서별 시트 분할 엑셀 보고서 생성 및 이미지 삽입
+    # 6. 3단계: 부서별 시트 분할 엑셀 보고서 생성 및 이미지 삽입 (보고서 포맷 적용)
     # -----------------------------------------------------------------------------
     st.header("3단계: 부서별 엑셀 통합 보고서 생성")
     
-    def create_excel_report(issue_data):
+    def create_excel_report(issue_data, allowed_teams):
+        # 다운로드 시점의 현재 시스템 날짜 확보
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+
         wb = openpyxl.Workbook()
         wb.remove(wb.active) # 기본 시트 삭제
         
         # 엑셀 공통 서식 정의
         header_font = Font(bold=True, size=11, color="FFFFFF")
         header_fill = PatternFill("solid", fgColor="4F81BD")
+        overview_fill = PatternFill("solid", fgColor="E9ECEF")
+        bold_font = Font(bold=True, size=11)
         border_style = Border(
             left=Side(style='thin'), right=Side(style='thin'), 
             top=Side(style='thin'), bottom=Side(style='thin')
@@ -200,43 +221,100 @@ if st.session_state.issue_data:
         center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
         left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-        for team in TEAM_LIST:
-            # 해당 부서의 데이터만 필터링
+        for team in allowed_teams:
             team_issues = [item for item in issue_data if item["team"] == team]
             
             if team_issues:
                 ws = wb.create_sheet(title=team)
                 
-                # 헤더 작성
+                # --- [보고서 상단 헤더 및 개요 구성] ---
+                
+                # 1. 보고서 제목 
+                ws.merge_cells('A1:E1')
+                ws['A1'] = f"[{team}] 심사 개선요구사항 조치 보고서"
+                ws['A1'].font = Font(size=16, bold=True)
+                ws['A1'].alignment = center_align
+                ws.row_dimensions[1].height = 30
+                
+                # 2. 작성일자 및 작성부서 (우측 정렬)
+                ws.merge_cells('A2:E2')
+                ws['A2'] = f"작성일자: {today_str}    |    작성부서: 식품안전팀"
+                ws['A2'].font = Font(size=11, bold=True)
+                ws['A2'].alignment = Alignment(horizontal='right', vertical='center')
+                ws.row_dimensions[2].height = 20
+                
+                # 3. 심사 개요 서브타이틀
+                ws.merge_cells('A3:E3')
+                ws['A3'] = "■ 심사 개요"
+                ws['A3'].font = bold_font
+                ws['A3'].alignment = Alignment(horizontal='left', vertical='center')
+                ws.row_dimensions[3].height = 20
+                
+                # 4. 심사 개요 입력 표
+                ws['A4'] = "심사기관"
+                ws['B4'] = "(기관명 기입)"
+                ws['C4'] = "심사일자"
+                ws.merge_cells('D4:E4')
+                ws['D4'] = "(일자 기입)"
+                
+                ws['A5'] = "심사목적"
+                ws.merge_cells('B5:E5')
+                ws['B5'] = "정기 위생/품질 심사 대응 및 시정조치"
+                
+                # 심사 개요 표 서식 적용
+                for r in range(4, 6):
+                    ws.row_dimensions[r].height = 25
+                    for c in range(1, 6):
+                        cell = ws.cell(row=r, column=c)
+                        cell.border = border_style
+                        if c in [1, 3]: # A열, C열 (라벨)
+                            cell.fill = overview_fill
+                            cell.alignment = center_align
+                            cell.font = bold_font
+                        else:
+                            cell.alignment = left_align
+                
+                # 간격 띄우기
+                ws.merge_cells('A6:E6')
+                ws['A6'] = ""
+                ws.row_dimensions[6].height = 10
+                
+                # 5. 본문 서브타이틀
+                ws.merge_cells('A7:E7')
+                ws['A7'] = "■ 개선 요구사항 및 조치 결과"
+                ws['A7'].font = bold_font
+                ws.row_dimensions[7].height = 20
+
+                # --- [데이터 표(리스트) 구성] ---
+                
+                # 6. 표 헤더 작성
                 headers = ["No", "지적사항(개선요구사항)", "개선 전 사진", "원인 및 조치내역(작성란)", "개선 후 사진(첨부란)"]
-                ws.append(headers)
-                
-                # 열 너비 설정 (픽셀 단위 조정)
-                ws.column_dimensions['A'].width = 5
-                ws.column_dimensions['B'].width = 40
-                ws.column_dimensions['C'].width = 30
-                ws.column_dimensions['D'].width = 40
-                ws.column_dimensions['E'].width = 30
-                
-                # 헤더 서식 적용
-                for cell in ws[1]:
+                for c, h in enumerate(headers, start=1):
+                    cell = ws.cell(row=8, column=c, value=h)
                     cell.font = header_font
                     cell.fill = header_fill
                     cell.border = border_style
                     cell.alignment = center_align
+                ws.row_dimensions[8].height = 25
                 
-                # 데이터 행 작성 및 이미지 삽입
-                current_row = 2
+                # 7. 열 너비 설정 (사진 크기 확대를 위해 C열, E열 너비 대폭 증가)
+                ws.column_dimensions['A'].width = 5
+                ws.column_dimensions['B'].width = 40
+                ws.column_dimensions['C'].width = 45  # 확대됨
+                ws.column_dimensions['D'].width = 40
+                ws.column_dimensions['E'].width = 45  # 확대됨
+                
+                # 8. 데이터 행 작성 및 큰 이미지 삽입
+                current_row = 9
                 for idx, item in enumerate(team_issues, start=1):
-                    # 텍스트 데이터 입력
                     ws.cell(row=current_row, column=1, value=idx)
                     ws.cell(row=current_row, column=2, value=item["issue"])
                     ws.cell(row=current_row, column=4, value="") # 조치내역 빈칸
                     
-                    # 행 높이 넉넉하게 설정 (사진이 들어갈 공간)
-                    ws.row_dimensions[current_row].height = 150
+                    # 행 높이 넉넉하게 설정 (사진 확대를 위해 220 픽셀로 증가)
+                    ws.row_dimensions[current_row].height = 220
                     
-                    # 서식 적용
+                    # 테두리 및 정렬 서식
                     for col in range(1, 6):
                         cell = ws.cell(row=current_row, column=col)
                         cell.border = border_style
@@ -247,36 +325,32 @@ if st.session_state.issue_data:
 
                     # 사진(이미지) 삽입 처리
                     if item["image"] is not None:
-                        # 이미지를 PIL로 열고 엑셀에 맞게 리사이징(썸네일 처리)
                         img = PILImage.open(item["image"])
-                        img.thumbnail((200, 180)) # 셀 크기에 맞게 리사이징
+                        # 이미지 해상도를 기존 대비 크게 확대 (310x280)
+                        img.thumbnail((310, 280)) 
                         
-                        # 바이너리 스트림으로 변환 (파일 저장 없이 처리)
                         img_byte_arr = io.BytesIO()
                         img.save(img_byte_arr, format='PNG')
                         img_byte_arr.seek(0)
                         
                         xl_img = ExcelImage(img_byte_arr)
-                        # C열(개선 전 사진) 위치에 앵커 고정 (예: C2, C3...)
+                        # C열(개선 전 사진) 위치에 앵커 고정
                         xl_img.anchor = f"C{current_row}" 
                         
-                        # 정위치 삽입
                         ws.add_image(xl_img)
                         
                     current_row += 1
 
-        # 데이터가 있는 시트가 하나도 없을 경우 빈 시트 생성
         if not wb.sheetnames:
             ws = wb.create_sheet(title="조치사항없음")
             ws.append(["해당하는 지적사항이 없습니다."])
 
-        # 완성된 엑셀 파일을 바이너리로 변환하여 반환
         excel_io = io.BytesIO()
         wb.save(excel_io)
         return excel_io.getvalue()
 
-    if st.button("📊 부서별 엑셀 보고서 다운로드 (사진 자동 삽입)"):
-        excel_data = create_excel_report(st.session_state.issue_data)
+    if st.button("📊 부서별 보고서 양식 엑셀 다운로드"):
+        excel_data = create_excel_report(st.session_state.issue_data, current_teams)
         st.download_button(
             label="💾 '심사조치_통합보고서.xlsx' 다운로드",
             data=excel_data,
