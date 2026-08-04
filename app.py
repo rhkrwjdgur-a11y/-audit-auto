@@ -81,7 +81,7 @@ with st.sidebar:
 st.header("1단계: 심사 대상 선택 및 파일 업로드")
 
 product_category = st.radio(
-    "🔍 심사 대상 제품군을 선택하세요 (선택 시 해당 공정 관련 팀만 활성화되어 정확도가 향상됩니다.)",
+    "🔍 심사 대상 제품군을 선택하세요",
     ["전체 (모든 부서 활성화)", "유제품 (상온 부서 제외)", "상온제품 (유제품 부서 제외)"],
     horizontal=True
 )
@@ -198,28 +198,39 @@ if st.session_state.issue_data:
             st.markdown("---")
 
     # -----------------------------------------------------------------------------
-    # 6. 3단계: 부서별 시트 분할 엑셀 보고서 생성 및 이미지 삽입 (보고서 포맷 적용)
+    # 6. 3단계: 보고서 정보 입력 및 엑셀 생성
     # -----------------------------------------------------------------------------
-    st.header("3단계: 부서별 엑셀 통합 보고서 생성")
+    st.header("3단계: 부서별 엑셀 통합 보고서 다운로드")
     
+    # 엑셀 헤더에 들어갈 정보를 사용자에게 입력받음 (사진 레이아웃 반영)
+    st.markdown("📝 **보고서 상단에 인쇄될 정보를 입력해 주세요.**")
+    col_h1, col_h2 = st.columns(2)
+    with col_h1:
+        report_title = st.text_input("보고서 제목", "홈플러스 정기심사 결과 보고서")
+        report_date = st.text_input("보고 일자", "2026. 5. 13(수)")
+        team_name = st.text_input("작성 부서", "식품안전팀")
+    with col_h2:
+        audit_date = st.text_input("심사 일자", "2026. 4. 28(화)")
+        audit_agency = st.text_input("심사 기관(심사자)", "한국뷰로베리타스 윤대민")
+        audit_purpose = st.text_input("심사 목적", "정기심사")
+        
     def create_excel_report(issue_data, allowed_teams):
-        # 다운로드 시점의 현재 시스템 날짜 확보
-        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-
         wb = openpyxl.Workbook()
         wb.remove(wb.active) # 기본 시트 삭제
         
         # 엑셀 공통 서식 정의
         header_font = Font(bold=True, size=11, color="FFFFFF")
         header_fill = PatternFill("solid", fgColor="4F81BD")
-        overview_fill = PatternFill("solid", fgColor="E9ECEF")
-        bold_font = Font(bold=True, size=11)
+        bold_font = Font(bold=True, size=12)
+        normal_font = Font(size=11)
+        
         border_style = Border(
             left=Side(style='thin'), right=Side(style='thin'), 
             top=Side(style='thin'), bottom=Side(style='thin')
         )
         center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
         left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+        right_align = Alignment(horizontal='right', vertical='center', wrap_text=True)
 
         for team in allowed_teams:
             team_issues = [item for item in issue_data if item["team"] == team]
@@ -227,94 +238,78 @@ if st.session_state.issue_data:
             if team_issues:
                 ws = wb.create_sheet(title=team)
                 
-                # --- [보고서 상단 헤더 및 개요 구성] ---
+                # --- [요청하신 레이아웃 기반 보고서 상단 개요 작성] ---
                 
-                # 1. 보고서 제목 
-                ws.merge_cells('A1:E1')
-                ws['A1'] = f"[{team}] 심사 개선요구사항 조치 보고서"
-                ws['A1'].font = Font(size=16, bold=True)
+                # 1. 보고서 제목 (크고 가운데 정렬, 테두리 없음)
+                ws.merge_cells('A1:E2')
+                ws['A1'] = report_title
+                ws['A1'].font = Font(size=22, bold=True)
                 ws['A1'].alignment = center_align
-                ws.row_dimensions[1].height = 30
                 
-                # 2. 작성일자 및 작성부서 (우측 정렬)
-                ws.merge_cells('A2:E2')
-                ws['A2'] = f"작성일자: {today_str}    |    작성부서: 식품안전팀"
-                ws['A2'].font = Font(size=11, bold=True)
-                ws['A2'].alignment = Alignment(horizontal='right', vertical='center')
-                ws.row_dimensions[2].height = 20
+                # 2. 보고 일자 및 부서명 (우측 정렬)
+                ws['E3'] = report_date
+                ws['E3'].font = normal_font
+                ws['E3'].alignment = right_align
                 
-                # 3. 심사 개요 서브타이틀
-                ws.merge_cells('A3:E3')
-                ws['A3'] = "■ 심사 개요"
-                ws['A3'].font = bold_font
-                ws['A3'].alignment = Alignment(horizontal='left', vertical='center')
-                ws.row_dimensions[3].height = 20
+                ws['E4'] = team_name
+                ws['E4'].font = normal_font
+                ws['E4'].alignment = right_align
                 
-                # 4. 심사 개요 입력 표
-                ws['A4'] = "심사기관"
-                ws['B4'] = "(기관명 기입)"
-                ws['C4'] = "심사일자"
-                ws.merge_cells('D4:E4')
-                ws['D4'] = "(일자 기입)"
+                # 3. 심사 개요 텍스트
+                ws['A6'] = "1. 심사 개요"
+                ws['A6'].font = bold_font
                 
-                ws['A5'] = "심사목적"
-                ws.merge_cells('B5:E5')
-                ws['B5'] = "정기 위생/품질 심사 대응 및 시정조치"
-                
-                # 심사 개요 표 서식 적용
-                for r in range(4, 6):
-                    ws.row_dimensions[r].height = 25
-                    for c in range(1, 6):
-                        cell = ws.cell(row=r, column=c)
-                        cell.border = border_style
-                        if c in [1, 3]: # A열, C열 (라벨)
-                            cell.fill = overview_fill
-                            cell.alignment = center_align
-                            cell.font = bold_font
-                        else:
-                            cell.alignment = left_align
-                
-                # 간격 띄우기
-                ws.merge_cells('A6:E6')
-                ws['A6'] = ""
-                ws.row_dimensions[6].height = 10
-                
-                # 5. 본문 서브타이틀
                 ws.merge_cells('A7:E7')
-                ws['A7'] = "■ 개선 요구사항 및 조치 결과"
-                ws['A7'].font = bold_font
-                ws.row_dimensions[7].height = 20
-
-                # --- [데이터 표(리스트) 구성] ---
+                ws['A7'] = f"가. 심사 일자 : {audit_date}"
+                ws['A7'].font = normal_font
                 
-                # 6. 표 헤더 작성
+                ws.merge_cells('A8:E8')
+                ws['A8'] = f"나. 심사 기관(심사자) : {audit_agency}"
+                ws['A8'].font = normal_font
+                
+                ws.merge_cells('A9:E9')
+                ws['A9'] = f"다. 심사 목적 : {audit_purpose}"
+                ws['A9'].font = normal_font
+                
+                # 행 높이 조절
+                ws.row_dimensions[1].height = 20
+                ws.row_dimensions[2].height = 20
+                ws.row_dimensions[6].height = 20
+                ws.row_dimensions[7].height = 18
+                ws.row_dimensions[8].height = 18
+                ws.row_dimensions[9].height = 18
+                
+                # 4. 데이터 표 시작 (Row 11부터 시작)
+                ws['A11'] = "2. 부서별 개선 요구사항 및 조치 결과"
+                ws['A11'].font = bold_font
+                ws.row_dimensions[11].height = 20
+
                 headers = ["No", "지적사항(개선요구사항)", "개선 전 사진", "원인 및 조치내역(작성란)", "개선 후 사진(첨부란)"]
                 for c, h in enumerate(headers, start=1):
-                    cell = ws.cell(row=8, column=c, value=h)
+                    cell = ws.cell(row=12, column=c, value=h)
                     cell.font = header_font
                     cell.fill = header_fill
                     cell.border = border_style
                     cell.alignment = center_align
-                ws.row_dimensions[8].height = 25
+                ws.row_dimensions[12].height = 25
                 
-                # 7. 열 너비 설정 (사진 크기 확대를 위해 C열, E열 너비 대폭 증가)
+                # 열 너비 고정 (사진이 크게 들어가도록 C, E열 45로 세팅)
                 ws.column_dimensions['A'].width = 5
                 ws.column_dimensions['B'].width = 40
-                ws.column_dimensions['C'].width = 45  # 확대됨
+                ws.column_dimensions['C'].width = 45  
                 ws.column_dimensions['D'].width = 40
-                ws.column_dimensions['E'].width = 45  # 확대됨
+                ws.column_dimensions['E'].width = 45  
                 
-                # 8. 데이터 행 작성 및 큰 이미지 삽입
-                current_row = 9
+                # 데이터 행 작성 및 큰 이미지 삽입
+                current_row = 13
                 for idx, item in enumerate(team_issues, start=1):
                     ws.cell(row=current_row, column=1, value=idx)
                     ws.cell(row=current_row, column=2, value=item["issue"])
                     ws.cell(row=current_row, column=4, value="") # 조치내역 빈칸
                     
-                    # 행 높이 넉넉하게 설정 (사진 확대를 위해 220 픽셀로 증가)
+                    # 사진 공간을 위해 행 높이 220 픽셀 적용
                     ws.row_dimensions[current_row].height = 220
                     
-                    # 테두리 및 정렬 서식
                     for col in range(1, 6):
                         cell = ws.cell(row=current_row, column=col)
                         cell.border = border_style
@@ -323,10 +318,9 @@ if st.session_state.issue_data:
                         else:
                             cell.alignment = center_align
 
-                    # 사진(이미지) 삽입 처리
                     if item["image"] is not None:
                         img = PILImage.open(item["image"])
-                        # 이미지 해상도를 기존 대비 크게 확대 (310x280)
+                        # 셀 너비/높이에 꽉 차게 310x280 사이즈로 썸네일 생성
                         img.thumbnail((310, 280)) 
                         
                         img_byte_arr = io.BytesIO()
@@ -334,7 +328,6 @@ if st.session_state.issue_data:
                         img_byte_arr.seek(0)
                         
                         xl_img = ExcelImage(img_byte_arr)
-                        # C열(개선 전 사진) 위치에 앵커 고정
                         xl_img.anchor = f"C{current_row}" 
                         
                         ws.add_image(xl_img)
@@ -349,7 +342,8 @@ if st.session_state.issue_data:
         wb.save(excel_io)
         return excel_io.getvalue()
 
-    if st.button("📊 부서별 보고서 양식 엑셀 다운로드"):
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("📊 보고서 양식 엑셀 다운로드 (사진 및 헤더 포함)"):
         excel_data = create_excel_report(st.session_state.issue_data, current_teams)
         st.download_button(
             label="💾 '심사조치_통합보고서.xlsx' 다운로드",
