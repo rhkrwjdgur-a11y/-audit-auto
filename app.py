@@ -130,7 +130,7 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 cell.alignment = center_align
             ws.row_dimensions[12].height = 25
             
-            # 열 너비 고정 
+            # 열 너비 고정 (너비 45는 픽셀로 약 320px)
             ws.column_dimensions['A'].width = 5
             ws.column_dimensions['B'].width = 40
             ws.column_dimensions['C'].width = 45  
@@ -144,6 +144,7 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                 ws.cell(row=current_row, column=2, value=item["issue"])
                 ws.cell(row=current_row, column=4, value="") 
                 
+                # 행 높이 220은 픽셀로 약 293px
                 ws.row_dimensions[current_row].height = 220
                 
                 for col in range(1, 6):
@@ -156,13 +157,20 @@ def create_excel_report(issue_data, allowed_teams, report_info):
 
                 if item["image"] is not None:
                     img = PILImage.open(item["image"])
-                    img.thumbnail((310, 280)) 
+                    
+                    # 팩트 기반 로직 변경: 비율 유지가 아닌 셀 내부 픽셀 사이즈에 맞게 강제 변환
+                    img = img.resize((315, 285))
                     
                     img_byte_arr = io.BytesIO()
                     img.save(img_byte_arr, format='PNG')
                     img_byte_arr.seek(0)
                     
                     xl_img = ExcelImage(img_byte_arr)
+                    
+                    # 엑셀 객체 삽입 시에도 너비와 높이를 픽셀로 명시적 고정
+                    xl_img.width = 315
+                    xl_img.height = 285
+                    
                     xl_img.anchor = f"C{current_row}" 
                     ws.add_image(xl_img)
                     
@@ -209,7 +217,7 @@ with st.sidebar:
 
 
 # =============================================================================
-# [메뉴 1] 심사 개선요구사항 문서 분류 (기존 기능)
+# [메뉴 1] 심사 개선요구사항 문서 분류 
 # =============================================================================
 if app_mode == "심사 개선요구사항 문서 분류":
     st.title("📋 심사 문서 텍스트 자동 추출 및 분류기")
@@ -286,7 +294,7 @@ if app_mode == "심사 개선요구사항 문서 분류":
                             parsed_list.append({
                                 "issue": row["지적사항"],
                                 "team": assigned_team,
-                                "image": None # 텍스트 모드이므로 초기 이미지는 없음
+                                "image": None 
                             })
                         st.session_state.text_issue_data = parsed_list
                         st.success("추출 완료! 2단계에서 사진을 추가하고 내용을 검수하세요.")
@@ -338,9 +346,8 @@ if app_mode == "심사 개선요구사항 문서 분류":
                 key="t_download"
             )
 
-
 # =============================================================================
-# [메뉴 2] 지적사항 사진 자동 분류 (신규 추가 기능)
+# [메뉴 2] 지적사항 사진 자동 분류 
 # =============================================================================
 elif app_mode == "지적사항 사진 자동 분류":
     st.title("📸 지적사항 사진 AI 자동 분석 및 분류기")
@@ -364,7 +371,7 @@ elif app_mode == "지적사항 사진 자동 분류":
 
     st.info(f"선택된 제품군에 따라 다음 부서로만 분류됩니다: **{', '.join(current_teams_img)}**")
 
-    # 다중 파일 업로드 허용 (accept_multiple_files=True)
+    # 다중 파일 업로드
     uploaded_images = st.file_uploader("📷 지적사항 사진 여러 장 일괄 업로드", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
 
     if st.button("🚀 사진 AI 분석 및 자동 분류 실행"):
@@ -377,12 +384,13 @@ elif app_mode == "지적사항 사진 자동 분류":
                 model = genai.GenerativeModel('gemini-3.6-flash')
                 parsed_img_list = []
                 
-                for img_file in uploaded_images:
+                progress_bar = st.progress(0)
+                total_imgs = len(uploaded_images)
+                
+                for idx, img_file in enumerate(uploaded_images):
                     try:
-                        # PIL 이미지 객체로 변환
                         pil_img = PILImage.open(img_file)
                         
-                        # Vision(멀티모달) 모델에 이미지와 함께 질문 던지기
                         prompt = f"""
                         당신은 식품 제조 현장의 심사관입니다. 
                         첨부된 사진을 보고 어떤 위생/품질 문제가 있는지 객관적으로 파악하십시오.
@@ -402,14 +410,13 @@ elif app_mode == "지적사항 사진 자동 분류":
                         response = model.generate_content([prompt, pil_img])
                         result_text = response.text.strip().replace("```", "").strip()
                         
-                        # 파이프 기준으로 결과 파싱
                         if "|" in result_text:
                             issue_desc, team_name = result_text.split("|", 1)
                             assigned_team = team_name.strip() if team_name.strip() in current_teams_img else "품질관리팀"
                             parsed_img_list.append({
                                 "issue": issue_desc.strip(),
                                 "team": assigned_team,
-                                "image": img_file # 업로드된 이미지를 엑셀 삽입용으로 그대로 저장
+                                "image": img_file 
                             })
                         else:
                             parsed_img_list.append({
@@ -419,6 +426,9 @@ elif app_mode == "지적사항 사진 자동 분류":
                             })
                     except Exception as e:
                         st.error(f"{img_file.name} 분석 중 오류 발생: {e}")
+                    
+                    # 진행률 업데이트
+                    progress_bar.progress((idx + 1) / total_imgs)
 
                 st.session_state.image_issue_data = parsed_img_list
                 st.success("사진 분석 및 추출이 완료되었습니다! 2단계에서 내용을 검수하세요.")
@@ -433,7 +443,6 @@ elif app_mode == "지적사항 사진 자동 분류":
                 col_a, col_b, col_c = st.columns([2, 4, 2])
                 
                 with col_a:
-                    # 사진 썸네일 미리보기 출력
                     st.image(item["image"], use_column_width=True)
                 with col_b:
                     st.session_state.image_issue_data[i]["issue"] = st.text_area("AI 작성 지적사항 (수정 가능)", value=item["issue"], height=100, key=f"i_issue_{i}")
