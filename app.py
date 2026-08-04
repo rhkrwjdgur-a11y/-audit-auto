@@ -155,26 +155,25 @@ def create_excel_report(issue_data, allowed_teams, report_info):
                     else:
                         cell.alignment = center_align
 
-                # 사진(이미지) 삽입 처리 (하얀 여백 제거 로직)
+                # 사진(이미지) 삽입 처리 (하얀 여백 완벽 제거 로직 적용)
                 if item["image"] is not None:
                     img = PILImage.open(item["image"])
                     
-                    # 알파 채널(투명도)이 있는 이미지일 경우 RGB로 강제 변환 (에러 방지)
                     if img.mode in ("RGBA", "P"):
                         img = img.convert("RGB")
                         
-                    # 셀 픽셀 사이즈(329x300)에 딱 맞도록(선 넘지 않게 1~2px 여유) 강제 리사이징
-                    img = img.resize((326, 298)) 
+                    # 가로를 340px로 넉넉하게 강제 오버사이징(Oversize)하여 우측 빈틈을 완벽하게 덮어버림
+                    img = img.resize((340, 300)) 
                     
                     img_byte_arr = io.BytesIO()
-                    img.save(img_byte_arr, format='JPEG') # 엑셀 용량 최적화를 위해 JPEG로 저장
+                    img.save(img_byte_arr, format='JPEG') 
                     img_byte_arr.seek(0)
                     
                     xl_img = ExcelImage(img_byte_arr)
                     
-                    # 엑셀 객체 삽입 시에도 픽셀 크기를 정확하게 고정
-                    xl_img.width = 326
-                    xl_img.height = 298
+                    # 엑셀에 그려지는 사진 크기도 오버사이징된 규격으로 고정
+                    xl_img.width = 340
+                    xl_img.height = 300
                     
                     xl_img.anchor = f"C{current_row}" 
                     ws.add_image(xl_img)
@@ -194,7 +193,6 @@ def create_excel_report(issue_data, allowed_teams, report_info):
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.title("🗂️ 업무 메뉴")
-    # 좌측 메뉴 선택
     app_mode = st.radio(
         "사용할 기능을 선택하세요",
         ["심사 개선요구사항 문서 분류", "지적사항 사진 자동 분류"]
@@ -376,7 +374,6 @@ elif app_mode == "지적사항 사진 자동 분류":
 
     st.info(f"선택된 제품군에 따라 다음 부서로만 분류됩니다: **{', '.join(current_teams_img)}**")
 
-    # 다중 파일 업로드
     uploaded_images = st.file_uploader("📷 지적사항 사진 여러 장 일괄 업로드", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
 
     if st.button("🚀 사진 AI 분석 및 자동 분류 실행"):
@@ -432,7 +429,6 @@ elif app_mode == "지적사항 사진 자동 분류":
                     except Exception as e:
                         st.error(f"{img_file.name} 분석 중 오류 발생: {e}")
                     
-                    # 진행률 업데이트
                     progress_bar.progress((idx + 1) / total_imgs)
 
                 st.session_state.image_issue_data = parsed_img_list
