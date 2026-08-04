@@ -5,15 +5,15 @@ import google.generativeai as genai
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.table import WD_TABLE_ALIGNMENT
+import PyPDF2
 
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 초기화
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="심사 개선요구사항 자동 분류 시스템", layout="wide")
 st.title("📋 심사 개선요구사항 자동 분류 및 보고서 생성기")
-st.markdown("업체 심사 결과를 입력하면, AI가 **공장 내부 보고서 어조로 문장을 정제**한 후 부서별로 분류하여 통합 워드 양식을 생성합니다.")
+st.markdown("업체 심사 결과(파일 또는 텍스트)를 입력하면, AI가 **공장 내부 보고서 어조로 문장을 정제**한 후 부서별로 분류하여 통합 워드 양식을 생성합니다.")
 
-# 세션 상태 초기화 (데이터 유지용)
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["개선요구사항", "담당부서"])
 
@@ -27,12 +27,43 @@ TEAM_LIST = [
 ]
 
 # -----------------------------------------------------------------------------
-# 2. 사이드바: 톤앤매너 가이드 설정 및 API 키 검증 (st.secrets 활용)
+# 2. 파일 텍스트 추출 함수 (팩트 기반 로직)
+# -----------------------------------------------------------------------------
+def extract_text_from_file(uploaded_file):
+    text = ""
+    file_name = uploaded_file.name.lower()
+
+    try:
+        if file_name.endswith('.pdf'):
+            pdf_reader = PyPDF2.PdfReader(uploaded_file)
+            for page in pdf_reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+        elif file_name.endswith(('.xlsx', '.xls')):
+            xls = pd.ExcelFile(uploaded_file)
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                text += f"--- {sheet_name} ---\n"
+                text += df.to_string(index=False) + "\n"
+        elif file_name.endswith('.docx'):
+            doc = Document(uploaded_file)
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+        else:
+            # txt 또는 csv 등 일반 텍스트 파일
+            text = uploaded_file.getvalue().decode("utf-8")
+    except Exception as e:
+        st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+
+    return text
+
+# -----------------------------------------------------------------------------
+# 3. 사이드바: 톤앤매너 가이드 설정 및 API 키 검증 (st.secrets 활용)
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 환경 설정")
     
-    # st.secrets를 통한 API 키 안전 로드
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
         genai.configure(api_key=api_key)
@@ -46,7 +77,6 @@ with st.sidebar:
     st.header("📖 사내 용어 및 어조 가이드")
     st.markdown("AI가 문장을 정제할 때 적용할 규칙을 입력하세요.")
     
-    # 사용자가 직접 내부 용어나 어조 규칙을 지정할 수 있는 고정 텍스트 영역
     default_tone_guide = """1. 종결어미: 모든 문장은 '~함', '~미흡', '~필요' 와 같은 명사형/개조식 문어체로 끝낼 것.
 2. 용어 변환: '더럽다/지저분하다' -> '청결 상태 미흡' 또는 '오염됨'
 3. 용어 변환: '우유/두유' -> '원유' 또는 '내용물'
@@ -65,22 +95,33 @@ with st.sidebar:
         st.markdown(f"- {team}")
 
 # -----------------------------------------------------------------------------
-# 3. 데이터 입력 및 AI 추출/변환 (1단계)
+# 4. 데이터 입력 및 AI 추출/변환 (1단계) - 파일 업로드 추가
 # -----------------------------------------------------------------------------
-st.header("1단계: 심사 결과 텍스트 입력 및 AI 자동 분류")
-raw_text = st.text_area("심사 결과 파일의 내용을 복사하여 아래에 붙여넣으세요.", height=200, placeholder="예: 1. 카톤 포장기계 주변이 우유로 더러움\n2. 상온 라인 멸균기 온도 기록이 없음...")
+st.header("1단계: 심사 결과 파일 업로드 및 AI 자동 분류")
+
+col1, col2 = st.columns(2)
+with col1:
+    uploaded_file = st.file_uploader("📄 심사 결과 파일 업로드 (PDF, 엑셀, 워드, 텍스트)", type=['pdf', 'xlsx', 'xls', 'docx', 'txt', 'csv'])
+with col2:
+    raw_text = st.text_area("✍️ 또는 텍스트 직접 붙여넣기", height=150, placeholder="파일 대신 텍스트를 직접 입력할 수도 있습니다.")
 
 if st.button("🚀 AI 추출 및 자동 분류 실행"):
     if not api_key_loaded:
         st.error("시스템에 API Key가 등록되지 않아 실행할 수 없습니다.")
-    elif not raw_text.strip():
-        st.warning("분석할 심사 결과 텍스트를 입력해 주세요.")
+    elif uploaded_file is None and not raw_text.strip():
+        st.warning("분석할 파일이나 텍스트를 입력해 주세요.")
     else:
-        with st.spinner("AI가 지적사항을 공장 내부 어조로 변환하고 부서를 분류 중입니다..."):
+        with st.spinner("AI가 파일 데이터를 추출하여 공장 내부 어조로 변환하고 부서를 분류 중입니다..."):
             try:
+                # 파일 데이터와 직접 입력 텍스트 병합
+                combined_text = ""
+                if uploaded_file is not None:
+                    combined_text += extract_text_from_file(uploaded_file) + "\n"
+                if raw_text.strip():
+                    combined_text += raw_text.strip()
+
                 model = genai.GenerativeModel('gemini-1.5-pro-latest')
                 
-                # 톤앤매너 규칙이 강제로 적용되도록 프롬프트 설계
                 prompt = f"""
                 당신은 식품 제조 현장의 품질 관리 및 외부 심사 지적사항을 분석하고 담당 부서를 배정하는 데이터 분류 전문가입니다.
                 아래의 '심사 결과 텍스트'에서 개선요구사항(지적사항) 항목들만 명확히 추출하십시오.
@@ -101,7 +142,7 @@ if st.button("🚀 AI 추출 및 자동 분류 실행"):
                 3. 마크다운 기호(```), 인사말, 부연 설명, 번호 매기기 등은 절대 포함하지 마십시오. 오직 데이터만 출력하십시오.
 
                 [심사 결과 텍스트]
-                {raw_text}
+                {combined_text}
                 """
                 
                 response = model.generate_content(prompt)
@@ -127,7 +168,7 @@ if st.button("🚀 AI 추출 및 자동 분류 실행"):
                 st.error(f"오류가 발생했습니다: {e}")
 
 # -----------------------------------------------------------------------------
-# 4. 데이터 검수 및 수정 (2단계)
+# 5. 데이터 검수 및 수정 (2단계)
 # -----------------------------------------------------------------------------
 st.header("2단계: 분류 결과 검수 (체크 및 수정)")
 st.markdown("AI가 내부 규격에 맞게 변환한 문장과 할당한 부서입니다. 표를 클릭하여 내용을 직접 수정할 수 있습니다.")
@@ -152,7 +193,7 @@ if not st.session_state.df.empty:
     )
     
     # -----------------------------------------------------------------------------
-    # 5. 워드 보고서 생성 및 다운로드 (3단계)
+    # 6. 워드 보고서 생성 및 다운로드 (3단계)
     # -----------------------------------------------------------------------------
     st.header("3단계: 단일 워드 보고서(양식) 다운로드")
     
