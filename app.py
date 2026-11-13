@@ -2005,7 +2005,7 @@ def trigger_manual_sync():
     st.session_state.pop("ax_brief_text", None)
 
 
-if BUNDLE_KEY not in st.session_state:
+if BUNDLE_KEY not in st.session_state or st.session_state[BUNDLE_KEY].get("loaded_date") != now_kst().strftime("%Y-%m-%d"):
     loading_box = st.empty()
     loading_box.markdown(
         """
