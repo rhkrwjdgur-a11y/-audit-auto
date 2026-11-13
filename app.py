@@ -20,10 +20,10 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 # ==============================================================================
-# 1. 기본 페이지 설정 및 세션 상태 초기화
+# 1. 페이지 기본 설정 및 세션 상태 초기화
 # ==============================================================================
 st.set_page_config(
-    page_title="2026 업적 KPI 현황판_품질안전부문 (AX Dashboard)",
+    page_title="2026 업적 KPI 현황판 | 연세유업 품질안전부문",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -35,6 +35,116 @@ if "current_view" not in st.session_state:
 def set_view(view_name: str):
     st.session_state.current_view = view_name
 
+
+# 시트 미연동 KPI 초기값 (5번 및 8~12번: 세부내역에서 실시간 수치/문구 수정 가능)
+DEFAULT_MANUAL_KPIS = {
+    "kpi_5": {
+        "no": "5",
+        "title": "5. 심사점수",
+        "target_text": "94.28점 이상",
+        "actual_text": "91.56점",
+        "sub_badge": "대비 : -2.72점",
+        "target_num": 94.28,
+        "actual_num": 91.56,
+        "suffix": "",
+        "signal": "red",
+        "has_chart": True,
+        "notes_title": "심사점수 주요 관리 내역",
+        "notes": [
+            "정기 위생·품질 심사 결과 집계 및 미비점 개선 조치 진행",
+            "현장 CCP 모니터링 및 중점 위생관리 항목 상시 점검"
+        ]
+    },
+    "kpi_8": {
+        "no": "8",
+        "title": "8. 식품안전 및 HACCP 강화",
+        "target_text": "11건 이상",
+        "actual_text": "11건, 100% 달성",
+        "sub_badge": "목표 100% 달성 완료",
+        "target_num": 11.0,
+        "actual_num": 11.0,
+        "suffix": "",
+        "signal": "green",
+        "has_chart": True,
+        "notes_title": "식품안전 및 HACCP 강화 추진 실적",
+        "notes": [
+            "연간 식품안전 및 HACCP 유효성 검증·개선 과제 11건 이행 완료",
+            "현장 작업자 정기 위생·CCP 교육 및 검증 프로세스 고도화"
+        ]
+    },
+    "kpi_9": {
+        "no": "9",
+        "title": "9. 핵심불량(클레임) 발생 저감화",
+        "target_text": "38건 이하",
+        "actual_text": "5건",
+        "sub_badge": "목표 대비 우수 관리 중",
+        "target_num": 38.0,
+        "actual_num": 5.0,
+        "suffix": "",
+        "signal": "green",
+        "has_chart": True,
+        "notes_title": "핵심불량(클레임) 중점 저감 내역",
+        "notes": [
+            "연간 허용 한도(38건 이하) 대비 현재 누적 5건으로 안정적 관리 중",
+            "설비 접착·이물·파손 등 핵심 중대 불량 요인 사전 예방 점검"
+        ]
+    },
+    "kpi_10": {
+        "no": "10",
+        "title": "10. 부자재 관리 고도화",
+        "target_text": "부자재폐기 0건",
+        "actual_text": "0건",
+        "sub_badge": "폐기 0건 무결점 유지",
+        "target_num": 0.0,
+        "actual_num": 0.0,
+        "suffix": "건",
+        "signal": "green",
+        "has_chart": False,
+        "notes_title": "부자재 폐기 Zero화 관리 내역",
+        "notes": [
+            "표시사항 사전 심의 및 법규 개정 선제 반영으로 부자재 오인쇄·폐기 0건 유지",
+            "포장재 발주 전 표시사항 더블체크 프로세스 상시 가동"
+        ]
+    },
+    "kpi_11": {
+        "no": "11",
+        "title": "11. 협력업체 관리강화",
+        "target_text": "실행률 88.3% 이상",
+        "actual_text": "77.9%",
+        "sub_badge": "목표 대비 -10.4%p (개선 추진)",
+        "target_num": 88.3,
+        "actual_num": 77.9,
+        "suffix": "%",
+        "signal": "yellow",
+        "has_chart": True,
+        "notes_title": "협력업체 현장·후속 관리강화 내역",
+        "notes": [
+            "연간 협력업체 현장심사 및 개선조치 실행률 점검 진행",
+            "미이행 및 일정 지연 업체 대상 집중 피드백 및 하반기 보완 점검"
+        ]
+    },
+    "kpi_12": {
+        "no": "12",
+        "title": "12. 식품안전 법적 RISK 최소화",
+        "target_text": "행정처분 0건",
+        "actual_text": "0건",
+        "sub_badge": "법적 행정처분 무결점 유지",
+        "target_num": 0.0,
+        "actual_num": 0.0,
+        "suffix": "건",
+        "signal": "green",
+        "has_chart": False,
+        "notes_title": "중요건 행정기관 조사 3건 대응",
+        "notes": [
+            "카톤발효유 : 3월",
+            "락토프리(명가) : 6월",
+            "호상발효유 : 10월"
+        ]
+    }
+}
+
+if "manual_kpis" not in st.session_state:
+    st.session_state["manual_kpis"] = {k: {**v, "notes": list(v["notes"])} for k, v in DEFAULT_MANUAL_KPIS.items()}
 
 FISCAL_MONTHS = ["3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월", "1월", "2월"]
 CALENDAR_MONTHS = [f"{i}월" for i in range(1, 13)]
@@ -54,218 +164,330 @@ SHEET_NAMES = {
 }
 
 # ==============================================================================
-# 2. 커스텀 CSS (장표 카드 + 가로 스크롤 없는 자동 줄바꿈 관제 테이블 + 신호등 색상)
+# 2. 연세유업 브랜드 컬러 기반 모던 포털 CSS
 # ==============================================================================
 st.markdown("""
 <style>
-    .main-title {
-        font-size: 28px;
-        font-weight: 800;
-        color: #002060;
-        border-bottom: 3px solid #7F9EB2;
-        padding-bottom: 8px;
-        margin-bottom: 5px;
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+    html, body, [class*="css"] {
+        font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+    }
+    .stApp {
+        background-color: #F4F7FA;
+    }
+    .block-container {
+        padding-top: 1.8rem;
+        padding-bottom: 2.5rem;
+        max-width: 97%;
+    }
+    /* 상단 메인 타이틀 */
+    .yonsei-header-bar {
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
+        border-bottom: 3px solid #00205B;
+        padding-bottom: 10px;
+        margin-bottom: 8px;
     }
-    .sub-date {
-        font-size: 14px;
-        font-weight: 700;
-        color: #002060;
+    .yonsei-title {
+        font-size: 27px;
+        font-weight: 800;
+        color: #00205B;
+        letter-spacing: -0.5px;
+    }
+    .yonsei-subtitle {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #475569;
         text-align: right;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
     }
     .ax-banner {
-        background: linear-gradient(90deg, #002060 0%, #1F4E78 100%);
+        background: linear-gradient(95deg, #00205B 0%, #003876 60%, #1E4E8C 100%);
         color: #FFFFFF;
-        padding: 12px 18px;
-        border-radius: 6px;
-        margin-bottom: 16px;
+        padding: 13px 20px;
+        border-radius: 10px;
+        margin-bottom: 18px;
         font-size: 14px;
         line-height: 1.6;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(0, 32, 91, 0.14);
     }
-    .forecast-box {
-        background-color: #F4F7FB;
-        border-left: 5px solid #1F4E78;
-        padding: 12px 16px;
-        border-radius: 4px;
-        margin-bottom: 14px;
-        font-size: 13.5px;
-        line-height: 1.65;
-        color: #111111;
+    /* 일체형 화이트 라운드 KPI 카드 컨테이너 */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #FFFFFF;
+        border: 1px solid #DCE4EE !important;
+        border-radius: 12px !important;
+        box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+        padding: 12px 14px 12px 14px !important;
+        margin-bottom: 8px;
     }
-    .kpi-card {
-        background-color: #F2F2F2;
-        border: 1px solid #D9D9D9;
-        border-radius: 4px;
-        box-shadow: 2px 2px 6px rgba(0,0,0,0.08);
-        margin-bottom: 6px;
-        overflow: hidden;
+    /* KPI 카드 상단 제목 바 버튼 (type="primary" 전용) */
+    button[kind="primary"],
+    button[data-testid="baseButton-primary"],
+    button[data-testid="stBaseButton-primary"] {
+        width: 100% !important;
+        background: linear-gradient(90deg, #00205B 0%, #003876 100%) !important;
+        color: #FFFFFF !important;
+        font-size: 15.5px !important;
+        font-weight: 700 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 9px 12px !important;
+        margin-bottom: 4px !important;
+        box-shadow: 0 2px 5px rgba(0, 32, 91, 0.15) !important;
+        transition: all 0.16s ease-in-out !important;
     }
-    .kpi-header {
-        background-color: #44546A;
-        color: white;
-        font-size: 16px;
-        font-weight: 700;
-        text-align: center;
-        padding: 10px 5px;
+    button[kind="primary"]:hover,
+    button[data-testid="baseButton-primary"]:hover,
+    button[data-testid="stBaseButton-primary"]:hover {
+        background: linear-gradient(90deg, #003876 0%, #0052A5 100%) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(0, 56, 118, 0.25) !important;
     }
-    .kpi-body {
-        padding: 14px 15px 5px 15px;
-        min-height: 135px;
+    /* 일반 보조 버튼 (동기화, 뒤로가기 등) */
+    button[kind="secondary"],
+    button[data-testid="baseButton-secondary"],
+    button[data-testid="stBaseButton-secondary"] {
+        width: 100%;
+        background-color: #FFFFFF !important;
+        color: #00205B !important;
+        font-weight: 700 !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+    }
+    button[kind="secondary"]:hover,
+    button[data-testid="baseButton-secondary"]:hover,
+    button[data-testid="stBaseButton-secondary"]:hover {
+        background-color: #EFF6FF !important;
+        border-color: #003876 !important;
+    }
+    /* KPI 카드 본문 구역 */
+    .kpi-meta-wrap {
         position: relative;
-        font-size: 13.5px;
-        color: #111111;
+        min-height: 92px;
+        padding: 6px 6px 4px 6px;
+        font-size: 13.8px;
+        color: #1E293B;
         line-height: 1.72;
     }
-    .kpi-bullet {
-        color: #44546A;
-        font-weight: bold;
+    .kpi-dot-bullet {
+        color: #003876;
+        font-weight: 800;
         margin-right: 6px;
     }
-    .ai-line {
-        font-size: 12.5px;
-        font-weight: 700;
-        color: #1F4E78;
-        background-color: #E8EEF5;
-        padding: 3px 8px;
-        border-radius: 4px;
-        margin-top: 4px;
+    .kpi-sub-pill {
         display: inline-block;
-    }
-    .unit-label {
+        margin-top: 5px;
+        padding: 3px 9px;
         font-size: 12px;
         font-weight: 700;
-        color: #002060;
-        text-align: right;
-        margin-top: -8px;
-        margin-bottom: -12px;
-        padding-right: 12px;
+        color: #003876;
+        background-color: #EBF3FE;
+        border: 1px solid #BFDBFE;
+        border-radius: 999px;
     }
+    /* 우측 상단 신호등 */
     .signal-dot {
-        height: 22px;
-        width: 22px;
+        height: 20px;
+        width: 20px;
         border-radius: 50%;
         position: absolute;
-        top: 12px;
-        right: 15px;
-        box-shadow: 0 0 6px rgba(0,0,0,0.25);
+        top: 6px;
+        right: 6px;
     }
-    .signal-red { background-color: #FF0000; border: 1.5px solid #800000; }
-    .signal-yellow { background-color: #FFC000; border: 1.5px solid #806000; }
-    .signal-green { background-color: #00B050; border: 1.5px solid #00602B; }
-    .signal-gray { background-color: #BFBFBF; border: 1.5px solid #7F7F7F; }
-    .rep-list-box {
-        background-color: #FFFFFF;
-        border: 1px solid #D9D9D9;
-        border-radius: 4px;
-        padding: 8px 10px;
-        margin-top: 6px;
+    .signal-red {
+        background-color: #EF4444;
+        border: 2px solid #991B1B;
+        box-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
+    }
+    .signal-yellow {
+        background-color: #F59E0B;
+        border: 2px solid #92400E;
+        box-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
+    }
+    .signal-green {
+        background-color: #10B981;
+        border: 2px solid #065F46;
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+    }
+    .signal-gray {
+        background-color: #94A3B8;
+        border: 2px solid #475569;
+    }
+    /* 3번 카드 전용: 2안(공정 체크리스트) + 3안(특이사항 스크롤 전광판) 결합 보드 */
+    .proc-hybrid-wrap {
+        height: 246px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 4px 4px 2px 4px;
+    }
+    .proc-check-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .proc-check-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 7px;
+        padding: 5px 9px;
+        font-size: 12.5px;
+    }
+    .proc-check-label {
+        font-weight: 700;
+        color: #1E293B;
+    }
+    .proc-check-meta {
+        font-size: 11.5px;
+        color: #64748B;
+        margin-left: 4px;
+    }
+    .badge-pill {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .badge-ok { background-color: #DCFCE7; color: #166534; border: 1px solid #86EFAC; }
+    .badge-warn { background-color: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+    .badge-err { background-color: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
+    .proc-issue-board {
+        margin-top: 7px;
+        background-color: #F8FAFC;
+        border: 1px solid #DCE4EE;
+        border-left: 4px solid #003876;
+        border-radius: 7px;
+        padding: 7px 10px;
+        height: 112px;
+        overflow-y: auto;
         font-size: 12px;
         line-height: 1.5;
-        color: #222222;
+        color: #1E293B;
     }
-    /* 공정 관제 특이사항 브리핑 박스 */
+    /* 카드 내 스크롤 목록 박스 (6번 전건 리스트, 7·10·12번 요약 리스트) */
+    .card-scroll-box {
+        background-color: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 9px 11px;
+        height: 150px;
+        overflow-y: auto;
+        margin-top: 4px;
+        font-size: 12.3px;
+        line-height: 1.55;
+        color: #1E293B;
+    }
+    .card-scroll-item {
+        padding: 3px 0;
+        border-bottom: 1px dashed #E2E8F0;
+    }
+    .card-scroll-item:last-child {
+        border-bottom: none;
+    }
+    /* 세부 페이지 진단/예측 박스 */
+    .forecast-box {
+        background-color: #FFFFFF;
+        border: 1px solid #DCE4EE;
+        border-left: 5px solid #00205B;
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        font-size: 13.8px;
+        line-height: 1.68;
+        color: #1E293B;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    }
     .issue-card-ok {
-        background-color: #EBF5EE;
-        border: 1px solid #A9D18E;
-        border-left: 6px solid #00B050;
-        border-radius: 6px;
+        background-color: #F0FDF4;
+        border: 1px solid #BBF7D0;
+        border-left: 5px solid #10B981;
+        border-radius: 8px;
         padding: 12px 15px;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
         font-size: 13.5px;
         line-height: 1.6;
-        color: #1B4332;
-        word-break: keep-all;
-        overflow-wrap: break-word;
+        color: #14532D;
     }
     .issue-card-warn {
-        background-color: #FFF9E6;
-        border: 1px solid #FFD966;
-        border-left: 6px solid #ED7D31;
-        border-radius: 6px;
+        background-color: #FFFBEB;
+        border: 1px solid #FDE68A;
+        border-left: 5px solid #F59E0B;
+        border-radius: 8px;
         padding: 12px 15px;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
         font-size: 13.5px;
         line-height: 1.6;
-        color: #332701;
-        word-break: keep-all;
-        overflow-wrap: break-word;
+        color: #78350F;
     }
-    /* 가로 스크롤 없는 자동 줄바꿈 관제 테이블 */
+    /* 모던 가로줄 자동줄바꿈 관제 표 (세로 격자선 제거, 포털형 배지 스타일) */
     .mon-table {
         width: 100%;
         border-collapse: collapse;
         table-layout: fixed;
         font-size: 13px;
-        margin-bottom: 16px;
+        margin-bottom: 18px;
         background-color: #FFFFFF;
-        border: 1px solid #D0D7DE;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        border: 1px solid #E2E8F0;
     }
     .mon-table th {
-        background-color: #44546A;
+        background-color: #00205B;
         color: #FFFFFF;
         font-weight: 700;
-        padding: 8px 6px;
-        border: 1px solid #D0D7DE;
+        padding: 10px 8px;
+        border-bottom: 2px solid #003876;
         text-align: center;
         word-break: keep-all;
     }
     .mon-table td {
-        padding: 7px 8px;
-        border: 1px solid #D0D7DE;
+        padding: 9px 8px;
+        border-bottom: 1px solid #E2E8F0;
         vertical-align: middle;
         word-break: keep-all;
         overflow-wrap: break-word;
-        line-height: 1.45;
-        color: #111111;
+        line-height: 1.48;
+        color: #1E293B;
+    }
+    .mon-table tr:hover td {
+        background-color: #F8FAFC;
     }
     .td-center { text-align: center; }
     .td-left { text-align: left; }
     .cell-green {
-        background-color: #E2F0D9 !important;
-        color: #1E6B34 !important;
+        background-color: #DCFCE7 !important;
+        color: #166534 !important;
         font-weight: 700;
     }
     .cell-yellow {
-        background-color: #FFF2CC !important;
-        color: #7F6000 !important;
+        background-color: #FEF3C7 !important;
+        color: #92400E !important;
         font-weight: 700;
     }
     .cell-red {
-        background-color: #FCE4D6 !important;
-        color: #C00000 !important;
+        background-color: #FEE2E2 !important;
+        color: #991B1B !important;
         font-weight: 700;
     }
     .cell-gray {
-        background-color: #F5F5F5 !important;
-        color: #7F7F7F !important;
-    }
-    div.stButton > button {
-        width: 100%;
-        background-color: #E7E6E6;
-        color: #002060;
-        font-weight: 700;
-        border: 1px solid #BFBFBF;
-        border-radius: 4px;
-        margin-bottom: 18px;
-    }
-    div.stButton > button:hover {
-        background-color: #002060;
-        color: white;
-        border-color: #002060;
+        background-color: #F8FAFC !important;
+        color: #94A3B8 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. Google 인증 및 병렬 안전 시트 오픈 유틸리티 (invalid_scope 원천 차단)
+# 3. Google 인증 및 병렬 시트 오픈 유틸리티
 # ==============================================================================
 def build_google_credentials():
-    """메인 스레드에서 OAuth 또는 서비스 계정 자격증명을 생성·갱신하여 반환"""
     if "google_oauth" in st.secrets:
         try:
             oauth_info = st.secrets["google_oauth"]
@@ -298,7 +520,6 @@ def build_google_credentials():
 
 
 def open_sheet_threadsafe(creds, sheet_urls_map: dict, key_or_title: str):
-    """각 워커 스레드마다 독립된 gspread Client를 생성해 스레드 충돌 없이 시트를 오픈"""
     if creds is None:
         return None, "인증 자격증명이 없습니다."
 
@@ -364,18 +585,14 @@ def get_signal_dot_html(status_code: str) -> str:
     if status_code == "yellow":
         return '<div class="signal-dot signal-yellow" title="주의"></div>'
     if status_code == "gray":
-        return '<div class="signal-dot signal-gray" title="미연동/빈칸"></div>'
+        return '<div class="signal-dot signal-gray" title="대기"></div>'
     return '<div class="signal-dot signal-green" title="양호"></div>'
 
 
 # ==============================================================================
-# 4. 추세선 및 잔여 월 예상 추세도(Forecast) 산출 함수
+# 4. 추세선·예상 추세도 계산 및 HTML 관제 테이블 렌더러
 # ==============================================================================
 def calc_trend_and_forecast_split(y_values: list, is_recorded_list: list = None, total_periods: int = 12):
-    """
-    실적이 기록된 월까지는 실적 회귀 추세선(actual_line),
-    이후 잔여 월(12월~2월 등)은 예상 추세 연장선(forecast_line)으로 분리 반환
-    """
     if is_recorded_list is not None:
         valid_idx = [i for i, flag in enumerate(is_recorded_list) if flag]
     else:
@@ -399,16 +616,9 @@ def calc_trend_and_forecast_split(y_values: list, is_recorded_list: list = None,
     return actual_line, forecast_line, full_line, round(float(slope), 4), len(valid_idx), last_idx
 
 
-# ==============================================================================
-# 5. HTML 자동 줄바꿈 & 실시간 색상 판정 테이블 렌더러 (가로 스크롤 제거)
-# ==============================================================================
 def render_html_table(columns_spec: list, rows_data: list) -> str:
-    """
-    columns_spec: [{"key": str, "label": str, "width": "12%", "align": "center"|"left"}, ...]
-    rows_data: [{"col_key": {"text": str, "cls": "cell-green"|"cell-yellow"|"cell-red"|"cell-gray"|""}, ...}]
-    """
     if not rows_data:
-        return "<div style='padding:10px; color:#666; background:#F9F9F9; border:1px solid #DDD; border-radius:4px;'>기록된 데이터가 없습니다.</div>"
+        return "<div style='padding:12px; color:#64748B; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:8px;'>기록된 데이터가 없습니다.</div>"
 
     colgroup = "".join([f"<col style='width:{c.get('width', 'auto')};'>" for c in columns_spec])
     thead = "".join([f"<th>{html.escape(str(c['label']))}</th>" for c in columns_spec])
@@ -440,10 +650,10 @@ def render_html_table(columns_spec: list, rows_data: list) -> str:
 
 
 # ==============================================================================
-# 6. 7대 지표별 실시간 시트 파싱 함수 (하드코딩 0%)
+# 5. 실시간 구글 시트 데이터 파서 (1~7번 시트 연동)
 # ==============================================================================
 
-# [1] 원가절감 현황 (공백 구분 열 E, J 포함 동적 헤더 위치 탐지)
+# [1] 원가절감 현황 (공백 구분 열 E·J 포함 동적 헤더 위치 탐지)
 def fetch_cost_sheet(creds, sheet_urls_map):
     sh, err = open_sheet_threadsafe(creds, sheet_urls_map, "cost")
     default_targets = {"부문": 1.54, "식품안전팀": 1.0, "품질관리팀": 0.54}
@@ -465,7 +675,6 @@ def fetch_cost_sheet(creds, sheet_urls_map):
                     "품질관리팀": float(nums_uk[2])
                 }
 
-        # 2행(인덱스 1)에서 '원가절감' 헤더 열 인덱스를 모두 탐색 -> [1(B열), 6(G열), 11(L열)]
         hdr_row_idx = 1
         for idx, r in enumerate(rows[:5]):
             if sum(1 for c in r if re.sub(r"\s+", "", str(c)) == "원가절감") >= 2:
@@ -484,15 +693,11 @@ def fetch_cost_sheet(creds, sheet_urls_map):
             r_pad = list(r) + [""] * max(0, qc_c + 4 - len(r))
             m_name = str(r_pad[max(0, b_c - 1)]).strip()
             if m_name in FISCAL_MONTHS:
-                b_raw = str(r_pad[b_c]).strip()
-                fs_raw = str(r_pad[fs_c]).strip()
-                qc_raw = str(r_pad[qc_c]).strip()
-
-                b_act = round(to_float(b_raw), 1)
+                b_act = round(to_float(r_pad[b_c]), 1)
                 b_tar = round(to_float(r_pad[b_c + 1]), 1)
-                fs_act = round(to_float(fs_raw), 1)
+                fs_act = round(to_float(r_pad[fs_c]), 1)
                 fs_tar = round(to_float(r_pad[fs_c + 1]), 1)
-                qc_act = round(to_float(qc_raw), 1)
+                qc_act = round(to_float(r_pad[qc_c]), 1)
                 qc_tar = round(to_float(r_pad[qc_c + 1]), 1)
 
                 is_rec = (b_act > 0) or (fs_act > 0) or (qc_act > 0)
@@ -690,8 +895,7 @@ def get_sorted_date_worksheets(sh):
     return ws_today, ws_yest, ordered_ws
 
 
-# CCP-3B 범위 적합 판정 보조 함수
-def eval_ccp3b_cell(val_str: str, std_str: str, is_ho_running: bool) -> str:
+def eval_ccp3b_cell(val_str: str, std_str: str) -> str:
     s = str(val_str).strip()
     if s in ["", "-"]:
         return ""
@@ -703,15 +907,10 @@ def eval_ccp3b_cell(val_str: str, std_str: str, is_ho_running: bool) -> str:
     if not ranges:
         return "cell-green"
 
-    all_ok = True
-    for n in nums:
-        if not any(float(lo) <= n <= float(hi) for lo, hi in ranges):
-            all_ok = False
-            break
+    all_ok = all(any(float(lo) <= n <= float(hi) for lo, hi in ranges) for n in nums)
     return "cell-green" if all_ok else "cell-red"
 
 
-# 멸균기 우측 S~U열 기준값과 실측치 적합 판정 보조 함수
 def eval_ster_metric(actual_str: str, std_str: str, sterilizer_ho: str, metric_kind: str) -> str:
     act_s = str(actual_str).strip()
     if act_s in ["", "-", "기록대기"]:
@@ -725,7 +924,6 @@ def eval_ster_metric(actual_str: str, std_str: str, sterilizer_ho: str, metric_k
     if std_s in ["", "-"]:
         return "cell-green"
 
-    # 호기별 분기 기준 처리 (예: '3호기 : 143 / 그외 : 139', '143 / 슬림_멸균2호기 142℃')
     target_val = None
     ho_num_m = re.search(r"(\d+)호기", str(sterilizer_ho))
     ho_num = ho_num_m.group(1) if ho_num_m else ""
@@ -756,7 +954,28 @@ def eval_ster_metric(actual_str: str, std_str: str, sterilizer_ho: str, metric_k
     return "cell-green"
 
 
-# [3-A] 상온제품 공정 관리 일보 정밀 파서 (전 행 스캔 + CCP-3B 복구 + S~V열 기준 직접 매칭)
+def is_same_tab_date_memo(memo_dt_str: str, tab_title: str) -> bool:
+    """우측 AB열 전달사항 중 25.05.03~25.09.22 등 과거 누적분을 제외하고 해당 날짜 탭 당일 기록만 허용"""
+    m_tab = re.match(r"^(\d{1,2})[/\.\-](\d{1,2})$", str(tab_title).strip())
+    if not m_tab or not str(memo_dt_str).strip():
+        return False
+    t_m, t_d = int(m_tab.group(1)), int(m_tab.group(2))
+
+    s = str(memo_dt_str).strip()
+    if re.search(r"(?:20)?25[\.\-/]", s):
+        return False
+    nums = [int(x) for x in re.findall(r"\d+", s)]
+    if len(nums) >= 3:
+        yr, mm, dd = nums[0], nums[1], nums[2]
+        if yr in (26, 2026) and mm == t_m and dd == t_d:
+            return True
+    elif len(nums) == 2:
+        if nums[0] == t_m and nums[1] == t_d:
+            return True
+    return False
+
+
+# [3-A] 상온제품 공정 관리 일보 파서 (우측 과거 전달사항 제외 + S~V열 기준 매칭 + CCP-3B 복구)
 def parse_rt_process_worksheet(ws):
     if ws is None:
         return None
@@ -772,10 +991,7 @@ def parse_rt_process_worksheet(ws):
                 prod_date_str = str(c).replace("생 산 일 :", "").strip()
                 break
 
-    # 전체 행 제한 없이 구역 헤더 탐색
-    r_pack_hdr = None
-    r_ccp3b_hdr = None
-    r_ster_hdr = None
+    r_pack_hdr, r_ccp3b_hdr, r_ster_hdr = None, None, None
     for idx, r in enumerate(rows):
         b_txt = re.sub(r"\s+", "", str(r[1])) if len(r) > 1 else ""
         row_join = re.sub(r"\s+", "", "".join(str(x) for x in r[:12]))
@@ -794,9 +1010,8 @@ def parse_rt_process_worksheet(ws):
     if r_ster_hdr is None:
         r_ster_hdr = min(r_ccp3b_hdr + 6, len(rows) - 1)
 
-    # 1) 상단 포장호기(A~F호기) 파싱
-    ho_products = {}
-    ho_rows_raw = {}
+    # 1) 포장호기(A~F호기)
+    ho_products, ho_rows_raw = {}, {}
     current_ho = ""
     for r in rows[r_pack_hdr + 1 : r_ccp3b_hdr]:
         r_pad = list(r) + [""] * max(0, 18 - len(r))
@@ -854,7 +1069,7 @@ def parse_rt_process_worksheet(ws):
                 "_cls": "cell-gray"
             })
 
-    # 2) 중단 포장기 공정관리 [CCP-3B] 파싱 (호기 병합 열 구간 전체 스캔)
+    # 2) 포장기 공정관리 [CCP-3B]
     ccp3b_records = []
     r_3b_colhdr = r_ccp3b_hdr
     for sub_i in range(r_ccp3b_hdr, min(r_ccp3b_hdr + 3, r_ster_hdr)):
@@ -863,8 +1078,7 @@ def parse_rt_process_worksheet(ws):
             break
 
     hdr_3b = [str(x).strip() for x in rows[r_3b_colhdr][:18]]
-    ho_pos_list = [(idx, cell) for idx, cell in enumerate(hdr_3b) if re.match(r"^[A-F]호기$", cell)]
-    ho_pos_list.sort(key=lambda x: x[0])
+    ho_pos_list = sorted([(idx, cell) for idx, cell in enumerate(hdr_3b) if re.match(r"^[A-F]호기$", cell)], key=lambda x: x[0])
 
     first_ho_col = ho_pos_list[0][0] if ho_pos_list else 8
     ho_col_spans = {}
@@ -900,8 +1114,7 @@ def parse_rt_process_worksheet(ws):
                 rec_3b[ho_lbl] = "-"
         ccp3b_records.append(rec_3b)
 
-    # 3) 하단 멸균기 [CCP-1B / CCP-2P] + 우측 S(18)~V(21)열 제품별 기준표 1:1 매칭
-    # 시트 내 S~V열 전체에서도 제품명 기준 사전 확보 (보조 매칭용)
+    # 3) 멸균기 [CCP-1B / CCP-2P] + 우측 S(18)~V(21)열 기준 매칭
     sv_std_by_prod = {}
     for r in rows[r_ster_hdr:]:
         if len(r) >= 22:
@@ -942,8 +1155,7 @@ def parse_rt_process_worksheet(ws):
 
     ster_records = []
     ster_special_notes = []
-    ho_ster_summary = {}
-    ho_remark_map = {}
+    ho_ster_summary, ho_remark_map = {}, {}
 
     for blk in ster_blocks:
         s_ho = blk["ster_ho"]
@@ -952,7 +1164,6 @@ def parse_rt_process_worksheet(ws):
         vol_str = next((str(br[3]).strip() for br in b_rows if str(br[3]).strip() not in ["", "-"]), "-")
         flt_str = next((str(br[13]).strip() or str(br[14]).strip() for br in b_rows if (str(br[13]).strip() or str(br[14]).strip()) not in ["", "-"]), "-")
 
-        # 같은 행 블록 우측 S(18), T(19), U(20), V(21)열 기준값 직접 추출
         std_temp = next((re.sub(r"\s+", " ", str(br[18])).strip() for br in b_rows if str(br[18]).strip() not in ["", "-", "멸균온도"]), "")
         std_press = next((re.sub(r"\s+", " ", str(br[19])).strip() for br in b_rows if str(br[19]).strip() not in ["", "-", "균질압"]), "")
         std_hold = next((re.sub(r"\s+", " ", str(br[20])).strip() for br in b_rows if str(br[20]).strip() not in ["", "-", "멸균시간"]), "")
@@ -970,7 +1181,7 @@ def parse_rt_process_worksheet(ws):
 
         rem_val = blk["remark"].strip()
         if rem_val:
-            ster_special_notes.append(f"[{s_ho} → {pack_ho} {matched_prod_str}] {rem_val}")
+            ster_special_notes.append(f"[{s_ho}·{pack_ho} {matched_prod_str}] {rem_val}")
             if pack_ho != "-":
                 ho_remark_map[pack_ho] = rem_val
 
@@ -996,7 +1207,6 @@ def parse_rt_process_worksheet(ws):
                 c_flt = "cell-green" if flt_str == "적합" else ("cell-red" if "부적합" in flt_str else "cell-yellow")
                 c_time = "cell-green" if re.search(r"\d{1,2}:\d{2}", mon_time) else "cell-yellow"
                 c_sign = "cell-green" if sign_v not in ["", "-"] else "cell-yellow"
-                c_rem = "cell-yellow" if rem_val else ""
 
                 ster_records.append({
                     "멸균기_포장": f"{s_ho} ({pack_ho})",
@@ -1013,7 +1223,7 @@ def parse_rt_process_worksheet(ws):
                     "_c_press": c_press,
                     "_c_hold": c_hold,
                     "_c_flt": c_flt if c_sign == "cell-green" else "cell-yellow",
-                    "_c_rem": c_rem
+                    "_c_rem": "cell-yellow" if rem_val else ""
                 })
                 if pack_ho != "-":
                     ho_ster_summary[pack_ho] = f"{s_ho} ({temp_v}℃ / {press_v}bar / {hold_v}초 / 여과망:{flt_str})"
@@ -1037,7 +1247,6 @@ def parse_rt_process_worksheet(ws):
                 "_c_rem": "cell-yellow" if rem_val else ""
             })
 
-    # 전일 마감 요약용 호기 통합 테이블
     compact_rows = []
     for lr in lines_records:
         if lr["생산 제품명"] == "(비가동)":
@@ -1055,19 +1264,20 @@ def parse_rt_process_worksheet(ws):
             "_cls_rem": "cell-yellow" if rem_txt != "이상없음" else "cell-green"
         })
 
-    # 4) 우측 AB(27)~AC(28:) 전달(특이)사항 파싱
-    issues = []
+    # 4) 우측 AB~AC열 전달사항: 25.05.03~25.09.22 등 오래된 누적분 제외, 해당 탭 날짜 당일분만 반영
     for r in rows[4:]:
         if len(r) >= 29:
             dt_s = str(r[27]).strip()
+            if not is_same_tab_date_memo(dt_s, tab_title):
+                continue
             memo_chunks = []
             for c in r[28:]:
                 cs = str(c).strip()
                 if cs and cs not in memo_chunks and "전달(특이)" not in cs and "생 산 일" not in cs:
                     memo_chunks.append(cs)
             memo_s = " / ".join(memo_chunks)
-            if dt_s not in ["", "날짜"] or memo_s:
-                issues.append({"기록일자": dt_s or tab_title, "전달(특이)사항 및 소비기한 조치내역": memo_s})
+            if memo_s:
+                ster_special_notes.append(f"[당일 전달사항] {memo_s}")
 
     return {
         "tab_title": tab_title,
@@ -1077,8 +1287,7 @@ def parse_rt_process_worksheet(ws):
         "compact_rows": compact_rows,
         "ccp3b_records": ccp3b_records,
         "ster_records": ster_records,
-        "ster_special_notes": ster_special_notes,
-        "df_issues": pd.DataFrame(list(reversed(issues)))
+        "ster_special_notes": ster_special_notes
     }
 
 
@@ -1161,7 +1370,7 @@ def parse_dairy_pack_worksheet(ws, line_label: str):
     return pd.DataFrame(parsed_products), w_date
 
 
-# [3-C] 두유 배양검사 일보 파서 (빈 블록 6~10 제외 & 체크박스 TRUE/라벨 문구 완전 제거)
+# [3-C] 두유 배양검사 일보 파서 (빈 블록 제외)
 SOY_STOP_LABELS = {
     "배양검사", "배양온도", "용량/포장기", "포장기", "작성자", "검사자",
     "품목", "생산일", "소비기한", "검사일", "생산시작", "생산종료",
@@ -1209,10 +1418,9 @@ def parse_soy_incubation_worksheet(ws):
             if re.sub(r"\s+", "", str(cell)) == "배양검사":
                 anchors.append((r_i, c_i))
 
-    blocks_parsed = []
-    hourly_all = []
+    blocks_parsed, hourly_all = [], []
 
-    for idx, (r0, c0) in enumerate(anchors):
+    for _, (r0, c0) in enumerate(anchors):
         same_row_next_c = [c for (rr, c) in anchors if abs(rr - r0) <= 2 and c > c0]
         c_end = min(same_row_next_c) if same_row_next_c else c0 + 14
 
@@ -1308,7 +1516,6 @@ def parse_soy_incubation_worksheet(ws):
                         "Paper": pap_v or "-"
                     })
 
-        # 표기가 없는 빈 양식 블록(블록6~10 등)은 완전히 제외
         has_valid_record = bool(machine_ho) and (bool(item_names) or bool(total_smp) or bool(t_start))
         if not has_valid_record:
             continue
@@ -1391,7 +1598,7 @@ def fetch_process_soy_sheet(creds, sheet_urls_map):
         return "-", {}, pd.DataFrame(), pd.DataFrame(), f"[두유배양일보] {e}"
 
 
-# [4] 협력업체 심사 결과 DB (시트2 마스터 + 시트1 실시간 점수 합산 매칭)
+# [4] 협력업체 심사 결과 DB (시트2 확정 점수 + '등급외_미비사항' 신규 탭 우선 연동)
 def fetch_supplier_sheet(creds, sheet_urls_map):
     sh, err = open_sheet_threadsafe(creds, sheet_urls_map, "supplier")
     if sh is None:
@@ -1411,8 +1618,7 @@ def fetch_supplier_sheet(creds, sheet_urls_map):
         if len(rows2) < 2:
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), df_s1, "협력업체 시트2(마스터 명단)가 비어 있습니다."
 
-        exact_score_map = {}
-        core_score_map = {}
+        exact_score_map, core_score_map = {}, {}
         if not df_s1.empty and "업체명" in df_s1.columns and "심사항목" in df_s1.columns:
             df_s1["_norm_exact"] = df_s1["업체명"].apply(lambda x: normalize_comp_name(x, core_only=False))
             df_s1["_norm_core"] = df_s1["업체명"].apply(lambda x: normalize_comp_name(x, core_only=True))
@@ -1453,13 +1659,14 @@ def fetch_supplier_sheet(creds, sheet_urls_map):
         col_comp = next((i for i, h in enumerate(hdr2) if "업체" in h), 1)
         col_item = next((i for i, h in enumerate(hdr2) if "품목" in h), 2)
         col_sc2 = next((i for i, h in enumerate(hdr2) if "점수" in h), -1)
+        col_res2 = next((i for i, h in enumerate(hdr2) if "결과" in h), -1)
         col_note2 = next((i for i, h in enumerate(hdr2) if "비고" in h), -1)
 
         temp_list = []
         for r in rows2[1:]:
             if not any(str(x).strip() for x in r):
                 continue
-            r_pad = list(r) + [""] * max(0, 6 - len(r))
+            r_pad = list(r) + [""] * max(0, 7 - len(r))
             gubun = str(r_pad[col_gubun]).strip()
             comp = str(r_pad[col_comp]).strip()
             item = str(r_pad[col_item]).strip()
@@ -1471,6 +1678,7 @@ def fetch_supplier_sheet(creds, sheet_urls_map):
             matched = exact_score_map.get(nk_exact) or core_score_map.get(nk_core)
 
             s2_score_txt = str(r_pad[col_sc2]).strip() if col_sc2 >= 0 else ""
+            s2_res_txt = str(r_pad[col_res2]).strip() if col_res2 >= 0 else ""
             s2_note_txt = str(r_pad[col_note2]).strip() if col_note2 >= 0 else ""
 
             if s2_score_txt != "":
@@ -1490,12 +1698,10 @@ def fetch_supplier_sheet(creds, sheet_urls_map):
                 sc_num, sc_disp = -1, "미제출"
                 weak_cnt, weak_list = 0, []
 
-            if sc_num >= 85:
-                grade = "승인"
-            elif sc_num >= 70:
-                grade = "지도"
+            if s2_res_txt in ["승인", "지도", "등급 외"]:
+                grade = s2_res_txt
             else:
-                grade = "등급 외"
+                grade = "승인" if sc_num >= 85 else ("지도" if sc_num >= 70 else "등급 외")
 
             note_final = s2_note_txt if s2_note_txt else ("미제출" if sc_disp == "미제출" else ("복수거래, 거래중지 등 검토" if grade == "등급 외" else ""))
             temp_list.append({
@@ -1532,9 +1738,32 @@ def fetch_supplier_sheet(creds, sheet_urls_map):
                 })
                 if rec["_weak_list"]:
                     under_detail_rows.append({
-                        "업체명": rec["업체명"],
-                        "미비 사항 (시트1 실시간 판정 기준)": ", ".join(rec["_weak_list"])
+                        "대상 구분": rec["업체명"],
+                        "분류": "서류심사 미흡",
+                        "미비 사항": ", ".join(rec["_weak_list"])
                     })
+
+        # 신규 생성된 '등급외_미비사항' 탭이 있으면 시트 탭 데이터를 최우선 적용
+        try:
+            ws_under = sh.worksheet("등급외_미비사항")
+            u_rows = ws_under.get_all_values()
+            if len(u_rows) >= 2:
+                sheet_uc, sheet_ud = [], []
+                hdr_uc = [str(x).strip() for x in u_rows[0][:4]]
+                hdr_ud = [str(x).strip() for x in u_rows[0][5:8]] if len(u_rows[0]) >= 8 else []
+
+                for ur in u_rows[1:]:
+                    ur_pad = list(ur) + [""] * max(0, 8 - len(ur))
+                    if any(str(x).strip() for x in ur_pad[:4]) and len(hdr_uc) == 4:
+                        sheet_uc.append(dict(zip(hdr_uc, [str(x).strip() for x in ur_pad[:4]])))
+                    if any(str(x).strip() for x in ur_pad[5:8]) and len(hdr_ud) == 3:
+                        sheet_ud.append(dict(zip(hdr_ud, [str(x).strip() for x in ur_pad[5:8]])))
+                if sheet_uc:
+                    under_comp_rows = sheet_uc
+                if sheet_ud:
+                    under_detail_rows = sheet_ud
+        except Exception:
+            pass
 
         df_master = pd.DataFrame(master_records)
         cnt_ok = int((df_master["결과"] == "승인").sum())
@@ -1567,14 +1796,14 @@ def parse_factual_date(row_dict: dict):
         if re.match(r"^\d{5}(\.\d+)?$", s):
             try:
                 dt = datetime(1899, 12, 30) + timedelta(days=float(s))
-                return dt.strftime("%Y-%m-%d"), f"{dt.year}년", f"{dt.month}월"
+                return dt.strftime("%Y-%m-%d"), f"{dt.year}년", f"{dt.month}월", dt.year, dt.month
             except Exception:
                 pass
         dt_parsed = pd.to_datetime(s, errors="coerce")
         if pd.notna(dt_parsed) and 2018 <= dt_parsed.year <= 2035:
-            return dt_parsed.strftime("%Y-%m-%d"), f"{dt_parsed.year}년", f"{dt_parsed.month}월"
+            return dt_parsed.strftime("%Y-%m-%d"), f"{dt_parsed.year}년", f"{dt_parsed.month}월", int(dt_parsed.year), int(dt_parsed.month)
 
-    return "원본날짜깨짐(#######)", "날짜미상", "날짜미상"
+    return "원본날짜깨짐(#######)", "날짜미상", "날짜미상", 0, 0
 
 
 def classify_label_status(status_str: str) -> str:
@@ -1602,10 +1831,12 @@ def fetch_label_status_sheet(creds, sheet_urls_map):
                 continue
             r_pad = [str(x).strip() for x in r] + [""] * max(0, len(headers) - len(r))
             item = dict(zip(headers, r_pad[:len(headers)]))
-            dt_str, yr_str, mo_str = parse_factual_date(item)
+            dt_str, yr_str, mo_str, yr_num, mo_num = parse_factual_date(item)
             item["등록일자"] = dt_str
             item["등록연도"] = yr_str
             item["등록월"] = mo_str
+            item["_yr_num"] = yr_num
+            item["_mo_num"] = mo_num
             item["분류"] = classify_label_status(item.get("상태", ""))
             data.append(item)
         return pd.DataFrame(data), None
@@ -1638,7 +1869,7 @@ def fetch_raw_material_db_sheet(creds, sheet_urls_map):
 
 
 # ==============================================================================
-# 7. 최초 1회 병렬 로딩 엔진 (세션 메모리 영구 보관 -> 화면 전환 시 로딩 0초)
+# 6. 최초 1회 병렬 로딩 엔진 (세션 메모리 보관으로 페이지 이동 시 로딩 지연 0초)
 # ==============================================================================
 def generate_ax_executive_briefing(summary_context_str: str) -> str:
     api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -1685,7 +1916,7 @@ def load_all_sheets_parallel() -> dict:
             "loaded_at": datetime.now().strftime("%Y. %m. %d %H:%M:%S")
         }
 
-    with ThreadPoolExecutor(max_workers=7) as ex:
+    with ThreadPoolExecutor(max_workers=8) as ex:
         f_cost = ex.submit(fetch_cost_sheet, creds, sheet_urls_map)
         f_claim = ex.submit(fetch_claim_sheet, creds, sheet_urls_map)
         f_rt = ex.submit(fetch_process_rt_sheet, creds, sheet_urls_map)
@@ -1751,7 +1982,7 @@ def trigger_manual_sync():
 
 
 if "kpi_bundle" not in st.session_state:
-    with st.spinner("구글 시트 실시간 데이터를 병렬로 불러오는 중입니다 (최초 1회)..."):
+    with st.spinner("연세유업 품질안전부문 KPI 실시간 데이터를 병렬로 불러오는 중입니다..."):
         st.session_state["kpi_bundle"] = load_all_sheets_parallel()
 
 bundle = st.session_state["kpi_bundle"]
@@ -1771,29 +2002,71 @@ all_load_errors = bundle["errors"]
 
 
 # ==============================================================================
-# 8. 차트 유틸리티 및 KPI 요약 지표 계산
+# 7. 카드 미니 차트 및 1~7번 지표 실시간 계산
 # ==============================================================================
-def draw_mini_bar(target_val, actual_val, suffix="", bar_labels=("목표", "실적"), empty_mode=False):
+def draw_mini_bar(target_val: float, actual_val: float, suffix: str = "", bar_labels=("목표", "실적")):
     fig = go.Figure()
-    if not empty_mode:
-        fig.add_trace(go.Bar(
-            x=[bar_labels[0]], y=[target_val], text=[f"{target_val}{suffix}"],
-            textposition="inside", insidetextanchor="end", marker_color="#7F7F7F", width=0.35,
-            textfont=dict(color="white", size=12, family="Malgun Gothic")
-        ))
-        fig.add_trace(go.Bar(
-            x=[bar_labels[1]], y=[actual_val], text=[f"{actual_val}{suffix}"],
-            textposition="inside", insidetextanchor="end", marker_color="#ED7D31", width=0.35,
-            textfont=dict(color="white", size=12, family="Malgun Gothic")
-        ))
-    max_y = max(target_val, actual_val) * 1.28 if (not empty_mode and max(target_val, actual_val) > 0) else 10
+    fig.add_trace(go.Bar(
+        x=[bar_labels[0]], y=[target_val], text=[f"{target_val}{suffix}"],
+        textposition="inside", insidetextanchor="end", marker_color="#94A3B8", width=0.36,
+        textfont=dict(color="white", size=12, family="Pretendard, Malgun Gothic")
+    ))
+    fig.add_trace(go.Bar(
+        x=[bar_labels[1]], y=[actual_val], text=[f"{actual_val}{suffix}"],
+        textposition="inside", insidetextanchor="end", marker_color="#0052A5", width=0.36,
+        textfont=dict(color="white", size=12, family="Pretendard, Malgun Gothic")
+    ))
+    max_y = max(target_val, actual_val) * 1.28 if max(target_val, actual_val) > 0 else 10
     fig.update_layout(
-        height=150, margin=dict(l=15, r=15, t=6, b=20),
-        paper_bgcolor="#F2F2F2", plot_bgcolor="#F2F2F2", showlegend=False,
-        xaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=12, color="#222222")),
-        yaxis=dict(showgrid=False, zeroline=True, zerolinecolor="#D9D9D9", showticklabels=False, range=[0, max_y])
+        height=155,
+        margin=dict(l=10, r=10, t=6, b=18),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        showlegend=False,
+        xaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=12, color="#334155")),
+        yaxis=dict(showgrid=False, zeroline=True, zerolinecolor="#E2E8F0", showticklabels=False, range=[0, max_y])
     )
     return fig
+
+
+def render_manual_kpi_card(kpi_key: str):
+    """5번 및 8~12번 수동/초기세팅 KPI 카드 공통 렌더러 (제목 클릭 시 세부 편집 화면 이동)"""
+    info = st.session_state["manual_kpis"][kpi_key]
+    with st.container(border=True):
+        st.button(
+            f"{info['title']}  ›",
+            key=f"hdr_{kpi_key}",
+            type="primary",
+            use_container_width=True,
+            on_click=set_view,
+            args=(kpi_key,)
+        )
+        st.markdown(f"""
+        <div class="kpi-meta-wrap">
+            {get_signal_dot_html(info['signal'])}
+            <div><span class="kpi-dot-bullet">●</span><b>목표 : {html.escape(info['target_text'])}</b></div>
+            <div><span class="kpi-dot-bullet">●</span><b>실적 : {html.escape(info['actual_text'])}</b></div>
+            <div class="kpi-sub-pill">{html.escape(info['sub_badge'])}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if info["has_chart"]:
+            st.plotly_chart(
+                draw_mini_bar(float(info["target_num"]), float(info["actual_num"]), suffix=info["suffix"]),
+                use_container_width=True,
+                config={"displayModeBar": False}
+            )
+        else:
+            notes_items = "".join([
+                f"<div class='card-scroll-item'>- {html.escape(line)}</div>"
+                for line in info["notes"]
+            ]) if info["notes"] else "<div class='card-scroll-item'>등록된 세부 메모 없음</div>"
+            st.markdown(f"""
+            <div class="card-scroll-box">
+                <div style="font-weight:700; color:#00205B; margin-bottom:4px;">✓ {html.escape(info['notes_title'])}</div>
+                {notes_items}
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # (1) 원가절감 요약
@@ -1828,7 +2101,7 @@ elif claim_slope > 0.03:
 else:
     sig_claim = "green"
 
-# (3) 공정 요약
+# (3) 공정 현황 및 특이사항 요약 (2안 체크리스트 + 3안 당일/전일 특이사항 전광판 데이터 구성)
 rt_t = proc_data["rt_today"]
 rt_y = proc_data["rt_yest"]
 rt_t_tab = rt_t["tab_title"] if rt_t else "-"
@@ -1839,19 +2112,29 @@ wait_rt_cnt = sum(1 for r in rt_t_lines if r["_cls"] == "cell-yellow")
 red_rt_cnt = sum(1 for r in rt_t_lines if r["_cls"] == "cell-red") + (
     sum(1 for sr in rt_t["ster_records"] if "cell-red" in (sr["_c_temp"], sr["_c_press"], sr["_c_hold"], sr["_c_flt"])) if rt_t else 0
 )
-active_milk_cnt = len(proc_data["df_milk_pack"][proc_data["df_milk_pack"]["가동여부"].str.contains("금일생산", na=False)]) if not proc_data["df_milk_pack"].empty else 0
-active_ferm_cnt = len(proc_data["df_ferm_pack"][proc_data["df_ferm_pack"]["가동여부"].str.contains("금일생산", na=False)]) if not proc_data["df_ferm_pack"].empty else 0
-soy_blocks_cnt = len(proc_data["df_soy_blocks"])
+
+df_milk_run = proc_data["df_milk_pack"][proc_data["df_milk_pack"]["가동여부"].str.contains("금일생산", na=False)] if not proc_data["df_milk_pack"].empty else pd.DataFrame()
+df_ferm_run = proc_data["df_ferm_pack"][proc_data["df_ferm_pack"]["가동여부"].str.contains("금일생산", na=False)] if not proc_data["df_ferm_pack"].empty else pd.DataFrame()
+active_dairy_cnt = len(df_milk_run) + len(df_ferm_run)
+
+df_soy_b_main = proc_data["df_soy_blocks"]
+soy_blocks_cnt = len(df_soy_b_main)
+soy_total_samples = sum(int(to_float(x, 0)) for x in df_soy_b_main["총 검사수량"]) if not df_soy_b_main.empty else 0
+soy_contam_total = sum(int(to_float(x, 0)) for x in df_soy_b_main["오염수량"]) if not df_soy_b_main.empty else 0
+
+today_real_notes = list(rt_t["ster_special_notes"]) if rt_t else []
+yest_real_notes = list(rt_y["ster_special_notes"]) if rt_y else []
+
 if rt_t is None:
     sig_process = "gray"
-elif red_rt_cnt > 0:
+elif red_rt_cnt > 0 or soy_contam_total > 0:
     sig_process = "red"
-elif wait_rt_cnt > 0 or (rt_t and len(rt_t["ster_special_notes"]) > 0):
+elif wait_rt_cnt > 0 or len(today_real_notes) > 0:
     sig_process = "yellow"
 else:
     sig_process = "green"
 
-# (4) 협력업체 요약
+# (4) 협력업체 서류심사 요약
 target_exec = 88.3
 total_sup_cnt = len(df_sup_master)
 unsub_sup_cnt = int((df_sup_master["점수"] == "미제출").sum()) if not df_sup_master.empty else 0
@@ -1862,16 +2145,21 @@ guide_sup_cnt = int((df_sup_master["결과"] == "지도").sum()) if not df_sup_m
 out_sup_cnt = int((df_sup_master["결과"] == "등급 외").sum()) if not df_sup_master.empty else 0
 sig_supplier = "green" if sup_exec_rate >= target_exec else ("red" if total_sup_cnt > 0 else "gray")
 
-# (6) 표시사항 진행 현황 요약
+# (6) 표시사항 진행 현황 요약 (전건 검토중 리스트 확보)
 if not df_label_status.empty:
     df_rev_now = df_label_status[df_label_status["분류"] == "식품안전팀 검토중"]
     df_comp_now = df_label_status[df_label_status["분류"] == "검토완료(확인필)"]
     reviewing_cnt = len(df_rev_now)
     completed_cnt = len(df_comp_now)
     broken_date_cnt = int((df_label_status["등록연도"] == "날짜미상").sum())
-    rep_titles = df_rev_now["제목"].head(4).tolist() if "제목" in df_rev_now.columns else []
+    all_rev_items = []
+    for _, r_rev in df_rev_now.iterrows():
+        dept_t = str(r_rev.get("요청부서", "")).strip()
+        title_t = str(r_rev.get("제목", "")).strip()
+        prefix = f"[{dept_t}] " if dept_t else ""
+        all_rev_items.append(f"{prefix}{title_t}")
 else:
-    reviewing_cnt, completed_cnt, broken_date_cnt, rep_titles = 0, 0, 0, []
+    reviewing_cnt, completed_cnt, broken_date_cnt, all_rev_items = 0, 0, 0, []
 sig_label = "yellow" if reviewing_cnt >= 5 else ("green" if not df_label_status.empty else "gray")
 
 # (7) 원자재 표시사항 DB 요약
@@ -1882,32 +2170,32 @@ sig_raw = "yellow" if allergy_raw_cnt > 0 else ("green" if not df_raw_sub.empty 
 
 if "ax_brief_text" not in st.session_state:
     brief_ctx = (
-        f"[원가절감] 누적 {cost_actual_uk}억({cost_rate}%), 연말 추세 예측 {cost_proj_uk}억 | "
+        f"[원가절감] 누적 {cost_actual_uk}억({cost_rate}%), 연말 추세 예상 {cost_proj_uk}억 | "
         f"[클레임] 2026년 누적 {claim_actual_ppm}ppm({claim_total_cnt}건), 2월 예상 추세 {claim_feb_pred}ppm | "
-        f"[공정] 상온({rt_t_tab}) {active_rt_cnt}건 가동, 유제품 {active_milk_cnt + active_ferm_cnt}품목 생산, 배양개봉({proc_data['soy_default_tab']}) {soy_blocks_cnt}개 호기 점검 | "
-        f"[협력업체] {total_sup_cnt}개사 중 {sub_sup_cnt}개사 제출({sup_exec_rate}%) | "
-        f"[표시사항] 완료 {completed_cnt}건, 현재 검토중 {reviewing_cnt}건"
+        f"[공정] 상온({rt_t_tab}) {active_rt_cnt}건 가동(특이사항 금일 {len(today_real_notes)}건·전일 {len(yest_real_notes)}건), 유제품 {active_dairy_cnt}품목 생산, 배양({proc_data['soy_default_tab']}) {soy_total_samples:,}개 적합 | "
+        f"[협력업체 서류심사] 승인 {ok_sup_cnt}·지도 {guide_sup_cnt}·등급외 {out_sup_cnt} ({sup_exec_rate}%) | "
+        f"[표시사항] 누적 완료 {completed_cnt:,}건, 현재 검토중 {reviewing_cnt}건"
     )
     st.session_state["ax_brief_text"] = generate_ax_executive_briefing(brief_ctx)
 
 
 # ==============================================================================
-# [화면 1] 메인 Summary 대시보드 (콜백 네비게이션으로 즉시 전환)
+# [화면 1] 메인 Summary 대시보드 (12개 KPI, 상단 제목 바 클릭 시 세부 이동)
 # ==============================================================================
 if st.session_state.current_view == "main":
-    top_c1, top_c2 = st.columns([8.3, 1.7])
+    top_c1, top_c2 = st.columns([8.4, 1.6])
     with top_c1:
         st.markdown("""
-            <div class="main-title">
-                <span>2026 업적 KPI 현황판_품질안전부문 (AX 스마트 대시보드)</span>
-                <span style="font-size: 20px;">Summary</span>
-            </div>
+        <div class="yonsei-header-bar">
+            <span class="yonsei-title">2026 업적 KPI 현황판_품질안전부문</span>
+            <span style="font-size:17px; font-weight:700; color:#003876;">Summary (항목 제목 클릭 시 상세 이동)</span>
+        </div>
         """, unsafe_allow_html=True)
     with top_c2:
         st.button("🔄 시트 실시간 동기화", on_click=trigger_manual_sync, key="btn_sync_top")
 
     st.markdown(
-        f"<div class='sub-date'>(동기화 시각 : {bundle['loaded_at']} | 신호등: 🟢양호 🟡주의/특이사항 🔴경고)</div>",
+        f"<div class='yonsei-subtitle'>동기화 기준 : {bundle['loaded_at']} &nbsp;|&nbsp; 상태 신호등 : 🟢 양호 &nbsp;🟡 주의/특이사항 &nbsp;🔴 경고</div>",
         unsafe_allow_html=True
     )
 
@@ -1917,140 +2205,176 @@ if st.session_state.current_view == "main":
                 st.write(f"- {err_line}")
 
     st.markdown(
-        f"<div class='ax-banner'><b>🤖 실시간 시트 데이터 종합 요약</b><br>{html.escape(st.session_state['ax_brief_text'])}</div>",
+        f"<div class='ax-banner'><b>🤖 연세유업 품질안전부문 실시간 KPI 브리핑</b><br>{html.escape(st.session_state['ax_brief_text'])}</div>",
         unsafe_allow_html=True
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    # ------------------ [1열: KPI 1 ~ 4번] ------------------
+    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
 
-    with col1:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">1. 원가 절감</div>
-            <div class="kpi-body">
+    # 1. 원가 절감
+    with r1_c1:
+        with st.container(border=True):
+            st.button("1. 원가 절감  ›", key="hdr_cost", type="primary", use_container_width=True, on_click=set_view, args=("cost",))
+            st.markdown(f"""
+            <div class="kpi-meta-wrap">
                 {get_signal_dot_html(sig_cost)}
-                <div><span class="kpi-bullet">●</span><b>목표 : {cost_target_uk}억원 이상</b></div>
-                <div><span class="kpi-bullet">●</span><b>실적 : {cost_actual_uk}억원 ({cost_rate}%)</b></div>
-                <div class="ai-line">📈 추세 예측 : 연말 {cost_proj_uk}억</div>
+                <div><span class="kpi-dot-bullet">●</span><b>목표 : {cost_target_uk}억원 이상</b></div>
+                <div><span class="kpi-dot-bullet">●</span><b>실적 : {cost_actual_uk}억원 ({cost_rate}% 달성)</b></div>
+                <div class="kpi-sub-pill">📈 추세 예측 : 연말 {cost_proj_uk}억원</div>
             </div>
-            <div class="unit-label">(단위 : 억원)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.plotly_chart(draw_mini_bar(cost_target_uk, cost_actual_uk), use_container_width=True, config={"displayModeBar": False})
-        st.button("🔍 1. 원가 절감 상세 (팀별/추세예측)", key="btn_cost", on_click=set_view, args=("cost",))
+            """, unsafe_allow_html=True)
+            st.plotly_chart(draw_mini_bar(cost_target_uk, cost_actual_uk), use_container_width=True, config={"displayModeBar": False})
 
-    with col2:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">2. 클레임 발생률</div>
-            <div class="kpi-body">
+    # 2. 클레임 발생률
+    with r1_c2:
+        with st.container(border=True):
+            st.button("2. 클레임 발생률  ›", key="hdr_claim", type="primary", use_container_width=True, on_click=set_view, args=("claim",))
+            st.markdown(f"""
+            <div class="kpi-meta-wrap">
                 {get_signal_dot_html(sig_claim)}
-                <div><span class="kpi-bullet">●</span><b>목표 : {claim_target_ppm} ppm이하</b></div>
-                <div><span class="kpi-bullet">●</span><b>실적 : {claim_actual_ppm} ppm ({claim_total_cnt:,}건)</b></div>
-                <div class="ai-line">📈 월 기울기 {claim_slope:+.2f} / 2월 예상 {claim_feb_pred}ppm</div>
+                <div><span class="kpi-dot-bullet">●</span><b>목표 : {claim_target_ppm} ppm 이하</b></div>
+                <div><span class="kpi-dot-bullet">●</span><b>실적 : {claim_actual_ppm} ppm (총 {claim_total_cnt:,}건)</b></div>
+                <div class="kpi-sub-pill">📈 기울기 {claim_slope:+.2f} / 2월 예상 {claim_feb_pred:.2f}ppm</div>
             </div>
-            <div class="unit-label">(단위 : ppm)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.plotly_chart(draw_mini_bar(claim_target_ppm, claim_actual_ppm), use_container_width=True, config={"displayModeBar": False})
-        st.button("🔍 2. 클레임 상세 (전사예측/부문별)", key="btn_claim", on_click=set_view, args=("claim",))
+            """, unsafe_allow_html=True)
+            st.plotly_chart(draw_mini_bar(claim_target_ppm, claim_actual_ppm), use_container_width=True, config={"displayModeBar": False})
 
-    with col3:
-        t_note_cnt = len(rt_t["ster_special_notes"]) + len(rt_t["df_issues"]) if rt_t else 0
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">3. 공정 현황 및 특이사항</div>
-            <div class="kpi-body">
+    # 3. 공정 현황 및 특이사항 (2안 체크리스트 보드 + 3안 금일·전일 특이사항 스크롤 전광판 결합)
+    with r1_c3:
+        with st.container(border=True):
+            st.button("3. 공정 현황 및 특이사항  ›", key="hdr_process", type="primary", use_container_width=True, on_click=set_view, args=("process",))
+
+            rt_badge_cls = "badge-err" if red_rt_cnt > 0 else ("badge-warn" if wait_rt_cnt > 0 else "badge-ok")
+            rt_badge_txt = "기준이탈 확인" if red_rt_cnt > 0 else (f"확인대기 {wait_rt_cnt}건" if wait_rt_cnt > 0 else "CCP 적합")
+
+            dairy_badge_cls = "badge-ok" if active_dairy_cnt > 0 else "badge-warn"
+            dairy_badge_txt = "점검 완료" if active_dairy_cnt > 0 else "생산 없음"
+
+            soy_badge_cls = "badge-err" if soy_contam_total > 0 else "badge-ok"
+            soy_badge_txt = f"오염 {soy_contam_total}건" if soy_contam_total > 0 else "오염 0건(적합)"
+
+            board_lines = []
+            for tn in today_real_notes:
+                board_lines.append(f"<div class='card-scroll-item'><b style='color:#B45309;'>[금일 {html.escape(rt_t_tab)}]</b> {html.escape(tn)}</div>")
+            for yn in yest_real_notes:
+                board_lines.append(f"<div class='card-scroll-item'><b style='color:#003876;'>[전일 {html.escape(rt_y_tab)}]</b> {html.escape(yn)}</div>")
+            if not board_lines:
+                board_lines.append(f"<div class='card-scroll-item' style='color:#166534; font-weight:700;'>🟢 금일({html.escape(rt_t_tab)}) 및 전일({html.escape(rt_y_tab)}) 설비·품질 특이사항 없음</div>")
+
+            st.markdown(f"""
+            <div style="position:relative; padding: 2px 4px 0 4px;">
                 {get_signal_dot_html(sig_process)}
-                <div><span class="kpi-bullet">●</span><b>상온({rt_t_tab}) : {active_rt_cnt}건 가동 / 특이사항 {t_note_cnt}건</b></div>
-                <div><span class="kpi-bullet">●</span><b>우유·발효유 : 금일 {active_milk_cnt + active_ferm_cnt}품목 생산</b></div>
-                <div class="ai-line">🧪 배양({proc_data['soy_default_tab']}) : {soy_blocks_cnt}개 호기 적합</div>
+                <div style="font-size:12.5px; font-weight:700; color:#475569; margin-bottom:5px;">
+                    기준탭 : 상온({html.escape(rt_t_tab)}) · 배양({html.escape(proc_data['soy_default_tab'])})
+                </div>
             </div>
-            <div class="unit-label">(단위 : 건/품목)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.plotly_chart(
-            draw_mini_bar(active_rt_cnt + active_milk_cnt, max(active_rt_cnt - wait_rt_cnt, 0) + active_milk_cnt, bar_labels=("금일가동", "확인완료")),
-            use_container_width=True, config={"displayModeBar": False}
-        )
-        st.button("🔍 3. 금일·전일 공정 및 배양 관제", key="btn_process", on_click=set_view, args=("process",))
+            <div class="proc-hybrid-wrap">
+                <div class="proc-check-list">
+                    <div class="proc-check-row">
+                        <span><span class="proc-check-label">상온 CCP</span><span class="proc-check-meta">({active_rt_cnt}건 가동)</span></span>
+                        <span class="badge-pill {rt_badge_cls}">{rt_badge_txt}</span>
+                    </div>
+                    <div class="proc-check-row">
+                        <span><span class="proc-check-label">유제품 포장</span><span class="proc-check-meta">(금일 {active_dairy_cnt}품목)</span></span>
+                        <span class="badge-pill {dairy_badge_cls}">{dairy_badge_txt}</span>
+                    </div>
+                    <div class="proc-check-row">
+                        <span><span class="proc-check-label">두유 배양</span><span class="proc-check-meta">({soy_blocks_cnt}호기·{soy_total_samples:,}개)</span></span>
+                        <span class="badge-pill {soy_badge_cls}">{soy_badge_txt}</span>
+                    </div>
+                </div>
+                <div class="proc-issue-board">
+                    <div style="font-weight:800; color:#00205B; margin-bottom:3px;">📋 금일·전일 현장 특이사항 전광판</div>
+                    {''.join(board_lines)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    with col4:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">4. 협력업체 관리</div>
-            <div class="kpi-body">
+    # 4. 협력업체 관리 (서류심사)
+    with r1_c4:
+        with st.container(border=True):
+            st.button("4. 협력업체 관리 (서류심사)  ›", key="hdr_supplier", type="primary", use_container_width=True, on_click=set_view, args=("supplier",))
+            st.markdown(f"""
+            <div class="kpi-meta-wrap">
                 {get_signal_dot_html(sig_supplier)}
-                <div><span class="kpi-bullet">●</span><b>목표 : {target_exec}% 이상 (대상 {total_sup_cnt}개사)</b></div>
-                <div><span class="kpi-bullet">●</span><b>제출 : {sub_sup_cnt}개사 ({sup_exec_rate}% / 미제출 {unsub_sup_cnt})</b></div>
-                <div class="ai-line">📊 승인 {ok_sup_cnt} / 지도 {guide_sup_cnt} / 등급외 {out_sup_cnt}</div>
+                <div><span class="kpi-dot-bullet">●</span><b>목표 : {target_exec}% 이상 (대상 {total_sup_cnt}개사)</b></div>
+                <div><span class="kpi-dot-bullet">●</span><b>제출 : {sub_sup_cnt}개사 ({sup_exec_rate}% / 미제출 {unsub_sup_cnt})</b></div>
+                <div class="kpi-sub-pill">승인 {ok_sup_cnt} / 지도 {guide_sup_cnt} / 등급외 {out_sup_cnt}</div>
             </div>
-            <div class="unit-label">(단위 : %)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.plotly_chart(draw_mini_bar(target_exec, sup_exec_rate, suffix="%"), use_container_width=True, config={"displayModeBar": False})
-        st.button("🔍 4. 협력업체 서류심사 상세", key="btn_supplier", on_click=set_view, args=("supplier",))
+            """, unsafe_allow_html=True)
+            st.plotly_chart(draw_mini_bar(target_exec, sup_exec_rate, suffix="%"), use_container_width=True, config={"displayModeBar": False})
 
-    col5, col6, col7 = st.columns([1, 1.5, 1.5])
+    # ------------------ [2열: KPI 5 ~ 8번] ------------------
+    r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
 
-    with col5:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">5. 심사점수</div>
-            <div class="kpi-body">
-                {get_signal_dot_html("gray")}
-                <div><span class="kpi-bullet">●</span><b>목표 : -</b></div>
-                <div><span class="kpi-bullet">●</span><b>실적 : -</b></div>
-                <div><span class="kpi-bullet">●</span><b>대비 : -</b></div>
-            </div>
-            <div class="unit-label">(단위 : 점)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.plotly_chart(draw_mini_bar(0, 0, empty_mode=True), use_container_width=True, config={"displayModeBar": False})
-        st.button("🔍 5. 심사점수 상세", key="btn_audit", on_click=set_view, args=("audit",))
+    # 5. 심사점수
+    with r2_c1:
+        render_manual_kpi_card("kpi_5")
 
-    with col6:
-        rep_html = "".join([f"<div>• {html.escape(t[:44])}{'...' if len(t) > 44 else ''}</div>" for t in rep_titles]) if rep_titles else "<div>• 현재 검토중 품목 없음</div>"
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">6. 표시사항 진행 현황</div>
-            <div class="kpi-body" style="min-height: 280px;">
+    # 6. 표시사항 진행 현황 (현재 검토중 전 품목 스크롤 노출)
+    with r2_c2:
+        with st.container(border=True):
+            st.button("6. 표시사항 진행 현황  ›", key="hdr_label_status", type="primary", use_container_width=True, on_click=set_view, args=("label_status",))
+            rev_all_html = "".join([
+                f"<div class='card-scroll-item'>• {html.escape(item)}</div>"
+                for item in all_rev_items
+            ]) if all_rev_items else "<div class='card-scroll-item'>현재 검토 대기 중인 품목이 없습니다.</div>"
+
+            st.markdown(f"""
+            <div class="kpi-meta-wrap">
                 {get_signal_dot_html(sig_label)}
-                <div><span class="kpi-bullet">●</span><b>검토 완료(확인필) : 누적 {completed_cnt:,}건</b> <span style="font-size:12px; color:#555;">(개시/준비·보류 제외)</span></div>
-                <div><span class="kpi-bullet">●</span><b style="color:#C00000;">현재 식품안전팀 검토중 : {reviewing_cnt:,}건</b> <span style="font-size:12px; color:#555;">(시트 총 {len(df_label_status):,}행)</span></div>
-                <div class="rep-list-box">
-                    <b>📌 현재 검토중 대표 품목 (실시간)</b>
-                    {rep_html}
-                </div>
+                <div><span class="kpi-dot-bullet">●</span><b>검토 완료(확인필) : 누적 {completed_cnt:,}건</b></div>
+                <div><span class="kpi-dot-bullet">●</span><b style="color:#DC2626;">현재 식품안전팀 검토중 : {reviewing_cnt:,}건</b></div>
+                <div class="kpi-sub-pill">시트 전체 {len(df_label_status):,}건 · 전년비 분석 제공</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.button("🔍 6. 표시사항 진행 상세 (연도·월별 완료 & 등록팀별)", key="btn_label_status", on_click=set_view, args=("label_status",))
+            <div class="card-scroll-box">
+                <div style="font-weight:800; color:#00205B; margin-bottom:4px;">📌 현재 검토중 전 품목 ({reviewing_cnt}건 전체 스크롤)</div>
+                {rev_all_html}
+            </div>
+            """, unsafe_allow_html=True)
 
-    with col7:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-header">7. 표시사항 특이사항 (원자재 DB 현황)</div>
-            <div class="kpi-body" style="min-height: 280px;">
+    # 7. 표시사항 특이사항 (원자재 DB)
+    with r2_c3:
+        with st.container(border=True):
+            st.button("7. 표시사항 특이사항 (원자재 DB)  ›", key="hdr_label_issue", type="primary", use_container_width=True, on_click=set_view, args=("label_issue",))
+            st.markdown(f"""
+            <div class="kpi-meta-wrap">
                 {get_signal_dot_html(sig_raw)}
-                <div><span class="kpi-bullet">●</span><b>원자재 표시사항 등록 : {sub_raw_cnt:,}건</b> {f'(전체 명단 {raw_master_cnt:,}건)' if raw_master_cnt > 0 else ''}</div>
-                <div><span class="kpi-bullet">●</span><b>검증 완료 : {verified_raw_cnt:,}건 / 신규 알레르기 체크 : {allergy_raw_cnt:,}건</b></div>
-                <div class="rep-list-box">
-                    <b>✓ 원자재 표시사항 DB 실시간 관리 항목</b>
-                    <div>• 원재료 한글표시사항·원산지·제조원·공급사(판매원) 교차검증</div>
-                    <div>• 기존 알레르기 vs 신규 알레르기 변경 원료 추적</div>
-                </div>
+                <div><span class="kpi-dot-bullet">●</span><b>원자재 등록 : {sub_raw_cnt:,}건</b> {f'(마스터 {raw_master_cnt:,}건)' if raw_master_cnt > 0 else ''}</div>
+                <div><span class="kpi-dot-bullet">●</span><b>검증 완료 : {verified_raw_cnt:,}건 / 신규 알레르기 : {allergy_raw_cnt:,}건</b></div>
+                <div class="kpi-sub-pill">원재료·제조원·공급사(판매원) 검증</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.button("🔍 7. 원자재 표시사항 DB 상세", key="btn_label_issue", on_click=set_view, args=("label_issue",))
+            <div class="card-scroll-box">
+                <div style="font-weight:800; color:#00205B; margin-bottom:4px;">✓ 원자재 표시사항 중점 관리</div>
+                <div class="card-scroll-item">• 원재료 한글표시사항 및 원산지 적합 검증</div>
+                <div class="card-scroll-item">• 제조원 및 공급사(판매원) 일치 여부 확인</div>
+                <div class="card-scroll-item">• 기존 알레르기 대비 신규 알레르기 혼입 추적</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # 8. 식품안전 및 HACCP 강화
+    with r2_c4:
+        render_manual_kpi_card("kpi_8")
+
+    # ------------------ [3열: KPI 9 ~ 12번] ------------------
+    r3_c1, r3_c2, r3_c3, r3_c4 = st.columns(4)
+
+    with r3_c1:
+        render_manual_kpi_card("kpi_9")
+    with r3_c2:
+        render_manual_kpi_card("kpi_10")
+    with r3_c3:
+        render_manual_kpi_card("kpi_11")
+    with r3_c4:
+        render_manual_kpi_card("kpi_12")
 
 
 # ==============================================================================
-# [화면 2] 세부 페이지 (세션 메모리 즉시 렌더링 -> 로딩 지연 0초)
+# [화면 2] 세부 페이지 (1~12번 전체 Drill-Down 및 수동 KPI 편집기)
 # ==============================================================================
 else:
-    nav_c1, nav_c2 = st.columns([8.3, 1.7])
+    nav_c1, nav_c2 = st.columns([8.4, 1.6])
     with nav_c1:
         st.button("⬅️ 전체 Summary 현황판으로 돌아가기", key="btn_back_main", on_click=set_view, args=("main",))
     with nav_c2:
@@ -2059,10 +2383,10 @@ else:
     view = st.session_state.current_view
 
     # --------------------------------------------------------------------------
-    # [세부 1] 원가 절감 (식품안전팀 G열 & 품질관리팀 L열 정확 반영 + 잔여월 예측)
+    # [세부 1] 원가 절감
     # --------------------------------------------------------------------------
     if view == "cost":
-        st.markdown("<div class='main-title'>1. 원가 절감 - 월별/팀별 실시간 실적 및 잔여월 추세 예측</div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>1. 원가 절감 — 월별·팀별 실적 및 잔여월 추세 예측</span></div>", unsafe_allow_html=True)
         if df_cost.empty:
             st.error("원가절감 현황 시트 데이터를 불러오지 못했습니다.")
         else:
@@ -2077,21 +2401,21 @@ else:
             fig_cost = go.Figure()
             fig_cost.add_trace(go.Bar(
                 x=df_cost["월"], y=df_cost["식품안전팀_실적(만원)"],
-                name="식품안전팀 실적(만원)", marker_color="#2E75B6",
+                name="식품안전팀 실적(만원)", marker_color="#003876",
                 text=df_cost["식품안전팀_실적(만원)"], textposition="inside"
             ))
             fig_cost.add_trace(go.Bar(
                 x=df_cost["월"], y=df_cost["품질관리팀_실적(만원)"],
-                name="품질관리팀 실적(만원)", marker_color="#ED7D31",
+                name="품질관리팀 실적(만원)", marker_color="#3B82F6",
                 text=df_cost["품질관리팀_실적(만원)"], textposition="inside"
             ))
             fig_cost.add_trace(go.Scatter(
                 x=df_cost["월"], y=df_cost["부문_기준(만원)"],
-                name="부문 월 기준", mode="lines", line=dict(color="#C00000", width=2.5, dash="dash")
+                name="부문 월 기준", mode="lines", line=dict(color="#DC2626", width=2.5, dash="dash")
             ))
             fig_cost.add_trace(go.Scatter(
                 x=df_cost["월"], y=cost_act_line,
-                name="실적 회귀 추세선", mode="lines+markers", line=dict(color="#7030A0", width=3)
+                name="실적 회귀 추세선", mode="lines+markers", line=dict(color="#7C3AED", width=3)
             ))
             if cost_last_i < 11:
                 fig_cost.add_trace(go.Scatter(
@@ -2099,20 +2423,18 @@ else:
                     name="AI 잔여월 예상 추세선", mode="lines+markers+text",
                     text=[f"{v:.0f}" if (v is not None and idx > cost_last_i) else "" for idx, v in enumerate(cost_fc_line)],
                     textposition="top center",
-                    line=dict(color="#00B0F0", width=3, dash="dot"),
+                    line=dict(color="#0EA5E9", width=3, dash="dot"),
                     marker=dict(symbol="diamond", size=9)
                 ))
-            fig_cost.update_layout(barmode="stack", height=430, title="📊 3월~2월 팀별 원가절감 실적 및 잔여월 예상 추세도 (단위: 만원)")
+            fig_cost.update_layout(barmode="stack", height=430, title="📊 3월~2월 팀별 원가절감 실적 및 잔여월 예상 추세도 (단위: 만원)", paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
             st.plotly_chart(fig_cost, use_container_width=True)
-
-            disp_cost = df_cost.drop(columns=["_기록여부"], errors="ignore")
-            st.dataframe(disp_cost, use_container_width=True, hide_index=True)
+            st.dataframe(df_cost.drop(columns=["_기록여부"], errors="ignore"), use_container_width=True, hide_index=True)
 
     # --------------------------------------------------------------------------
-    # [세부 2] 클레임 발생률 (1탭: 전사 추이 & AI 예상 추세도 최우선 배치 -> 2탭: 부문별)
+    # [세부 2] 클레임 발생률 (전사 추이 1탭 최우선 배치 + 잔여월 AI 예상 추세도)
     # --------------------------------------------------------------------------
     elif view == "claim":
-        st.markdown("<div class='main-title'>2. 클레임 발생률 - 전사 월별 추이·예상 추세도 및 부문별 상세 분석</div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>2. 클레임 발생률 — 전사 추이·AI 예상 추세도 및 부문별 분석</span></div>", unsafe_allow_html=True)
         if df_claim_cat.empty:
             st.error("클레임 건수 시트 데이터를 불러오지 못했습니다.")
         else:
@@ -2123,7 +2445,6 @@ else:
                 "🥛 전체 제품 유형별 상세 집계표"
             ])
 
-            # [탭 1] 전사 클레임 추이 (최우선 첫 탭) + 실적 추세선 + 잔여월 예상 추세선
             with tab_c1:
                 sub_26_cats = df_claim_cat[(df_claim_cat["연도"] == "2026년") & (df_claim_cat["유형"] != "합계")]
                 top_cat_txt = "-"
@@ -2135,7 +2456,7 @@ else:
                 ck1.metric("2026년 전사 누적 클레임", f"{claim_total_cnt:,} 건")
                 ck2.metric("2026년 전사 누적 PPM (목표 1.12)", f"{claim_actual_ppm} ppm", "목표 이내" if claim_actual_ppm <= claim_target_ppm else "목표 초과")
                 ck3.metric("월별 PPM 추세 기울기", f"{claim_slope:+.2f} ppm/월")
-                ck4.metric("회계연도 말(2월) 예상 PPM", f"{claim_feb_pred:.2f} ppm", f"현재 기록 {claim_m_cnt}개월 기준")
+                ck4.metric("회계연도 말(2월) 예상 PPM", f"{claim_feb_pred:.2f} ppm", f"기록된 {claim_m_cnt}개월 추세 기준")
 
                 rem_months_str = ", ".join(FISCAL_MONTHS[claim_last_i + 1:]) if 0 <= claim_last_i < 11 else "없음"
                 pred_vals_str = ", ".join([
@@ -2145,33 +2466,33 @@ else:
 
                 st.markdown(f"""
                 <div class="forecast-box">
-                    <b>🤖 전사 클레임 실시간 추세 및 AI 예상 추세 진단 (팩트 수치 기준)</b><br>
+                    <b>🤖 전사 클레임 실시간 추세 및 AI 예상 추세 진단</b><br>
                     • <b>실적 추세 :</b> 현재 기록된 {claim_m_cnt}개월 누적 발생률은 <b>{claim_actual_ppm} ppm</b>(총 {claim_total_cnt:,}건)이며, 월평균 증감 기울기는 <b>{claim_slope:+.2f} ppm/월</b>입니다. (최다 발생 유형: {html.escape(top_cat_txt)})<br>
-                    • <b>잔여월 예상 추세 ({rem_months_str}) :</b> 현재 선형 추세 연장 시 <b>{pred_vals_str}</b> 흐름으로 2월 말 당월 예상치는 <b>{claim_feb_pred:.2f} ppm</b>입니다.
+                    • <b>잔여월 예상 추세 ({rem_months_str}) :</b> 현재 선형 추세 연장 시 <b>{pred_vals_str}</b> 흐름으로 2월 당월 예상치는 <b>{claim_feb_pred:.2f} ppm</b>입니다.
                 </div>
                 """, unsafe_allow_html=True)
 
                 fig_cl = go.Figure()
                 fig_cl.add_trace(go.Bar(
                     x=df_claim_trend["월"], y=df_claim_trend["2025년_PPM"],
-                    name="2025년 실적 PPM", marker_color="#BFBFBF",
+                    name="2025년 실적 PPM", marker_color="#CBD5E1",
                     text=df_claim_trend["2025년_PPM"], textposition="outside"
                 ))
                 fig_cl.add_trace(go.Bar(
                     x=df_claim_trend["월"], y=df_claim_trend["2026년_PPM"],
-                    name="2026년 실적 PPM", marker_color="#ED7D31",
+                    name="2026년 실적 PPM", marker_color="#003876",
                     text=[v if flag else "" for v, flag in zip(df_claim_trend["2026년_PPM"], df_claim_trend["_기록여부"])],
                     textposition="outside"
                 ))
                 fig_cl.add_trace(go.Scatter(
                     x=df_claim_trend["월"], y=df_claim_trend["목표_PPM"],
                     name="2026 목표 기준 (1.12 ppm)", mode="lines",
-                    line=dict(color="#C00000", width=2.5, dash="dash")
+                    line=dict(color="#DC2626", width=2.5, dash="dash")
                 ))
                 fig_cl.add_trace(go.Scatter(
                     x=df_claim_trend["월"], y=claim_act_line,
                     name="2026 실적 추세선", mode="lines+markers",
-                    line=dict(color="#7030A0", width=3)
+                    line=dict(color="#7C3AED", width=3)
                 ))
                 if 0 <= claim_last_i < 11:
                     fig_cl.add_trace(go.Scatter(
@@ -2179,17 +2500,16 @@ else:
                         name="AI 예상 추세선 (잔여월 예측)", mode="lines+markers+text",
                         text=[f"예상 {v:.2f}" if (v is not None and idx > claim_last_i) else "" for idx, v in enumerate(claim_fc_line)],
                         textposition="top center",
-                        line=dict(color="#0070C0", width=3, dash="dot"),
-                        marker=dict(symbol="diamond", size=9, color="#0070C0")
+                        line=dict(color="#0284C7", width=3, dash="dot"),
+                        marker=dict(symbol="diamond", size=9, color="#0284C7")
                     ))
-                fig_cl.update_layout(barmode="group", height=440, title="📊 전사 2025년 vs 2026년 월별 클레임 PPM 및 잔여월 AI 예상 추세도")
+                fig_cl.update_layout(barmode="group", height=440, title="📊 전사 2025년 vs 2026년 월별 클레임 PPM 및 잔여월 AI 예상 추세도", paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
                 st.plotly_chart(fig_cl, use_container_width=True)
 
                 disp_cl_trend = df_claim_trend.drop(columns=["_기록여부"], errors="ignore").copy()
                 disp_cl_trend["추세/예상_PPM"] = claim_full_line
                 st.dataframe(disp_cl_trend, use_container_width=True, hide_index=True)
 
-            # [탭 2] 부문별 월단위 분석 및 예상 추세도
             with tab_c2:
                 cc1, cc2 = st.columns([1.2, 2.2])
                 with cc1:
@@ -2215,7 +2535,7 @@ else:
                     tot_c = int(t_df_m["합산_건수"].sum())
                     tot_p = int(t_df_m["합산_생산수량"].sum())
                     tot_ppm = round((tot_c / tot_p) * 1_000_000, 2) if tot_p > 0 else 0.0
-                    d_act_l, d_fc_l, d_full_l, d_slp, d_mcnt, d_last_i = calc_trend_and_forecast_split(
+                    d_act_l, d_fc_l, d_full_l, d_slp, _, d_last_i = calc_trend_and_forecast_split(
                         t_df_m["부문_통합_PPM"].tolist(),
                         t_df_m["_기록여부"].tolist()
                     )
@@ -2229,12 +2549,12 @@ else:
                     d_pred_txt = ", ".join([f"{FISCAL_MONTHS[i]} {d_full_l[i]:.2f}ppm" for i in range(d_last_i + 1, 12)]) if 0 <= d_last_i < 11 else "연간 집계 완료"
                     st.markdown(f"""
                     <div class="forecast-box">
-                        <b>📌 {d_lbl} 추세 및 예상 추세 요약 :</b> 누적 <b>{tot_ppm} ppm</b> ({tot_c:,}건 / {tot_p:,}개) | 월 기울기 <b>{d_slp:+.2f} ppm/월</b> | 잔여월 예상: <b>{d_pred_txt}</b>
+                        <b>📌 {d_lbl} 추세 요약 :</b> 누적 <b>{tot_ppm} ppm</b> ({tot_c:,}건 / {tot_p:,}개) | 월 기울기 <b>{d_slp:+.2f} ppm/월</b> | 잔여월 예상: <b>{d_pred_txt}</b>
                     </div>
                     """, unsafe_allow_html=True)
 
                     fig_div = make_subplots(specs=[[{"secondary_y": True}]])
-                    colors = ["#2E75B6", "#5B9BD5", "#ED7D31", "#F4B183"]
+                    colors = ["#00205B", "#0052A5", "#3B82F6", "#93C5FD"]
                     for i, cat in enumerate(t_cats):
                         fig_div.add_trace(
                             go.Bar(
@@ -2248,17 +2568,11 @@ else:
                             x=t_df_m["월"], y=t_df_m["부문_통합_PPM"], name="부문 통합 PPM",
                             mode="lines+markers+text",
                             text=[v if flag else "" for v, flag in zip(t_df_m["부문_통합_PPM"], t_df_m["_기록여부"])],
-                            textposition="top center", line=dict(color="#C00000", width=3)
+                            textposition="top center", line=dict(color="#DC2626", width=3)
                         ),
                         secondary_y=True
                     )
-                    fig_div.add_trace(
-                        go.Scatter(
-                            x=t_df_m["월"], y=d_act_l, name="실적 추세선",
-                            mode="lines", line=dict(color="#7030A0", width=2.5)
-                        ),
-                        secondary_y=True
-                    )
+                    fig_div.add_trace(go.Scatter(x=t_df_m["월"], y=d_act_l, name="실적 추세선", mode="lines", line=dict(color="#7C3AED", width=2.5)), secondary_y=True)
                     if 0 <= d_last_i < 11:
                         fig_div.add_trace(
                             go.Scatter(
@@ -2266,12 +2580,12 @@ else:
                                 mode="lines+markers+text",
                                 text=[f"{v:.2f}" if (v is not None and idx > d_last_i) else "" for idx, v in enumerate(d_fc_l)],
                                 textposition="bottom center",
-                                line=dict(color="#0070C0", width=3, dash="dot"),
+                                line=dict(color="#0284C7", width=3, dash="dot"),
                                 marker=dict(symbol="diamond", size=8)
                             ),
                             secondary_y=True
                         )
-                    fig_div.update_layout(barmode="stack", height=430, title=f"📊 {d_lbl} 월단위 건수 및 통합 PPM·예상 추세도")
+                    fig_div.update_layout(barmode="stack", height=430, title=f"📊 {d_lbl} 월단위 건수 및 통합 PPM·예상 추세도", paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
                     fig_div.update_yaxes(title_text="클레임 건수(건)", secondary_y=False)
                     fig_div.update_yaxes(title_text="PPM", secondary_y=True)
                     st.plotly_chart(fig_div, use_container_width=True)
@@ -2282,15 +2596,15 @@ else:
                     _, dairy_fc, _, _, _, d_li = calc_trend_and_forecast_split(df_dairy_m["부문_통합_PPM"].tolist(), df_dairy_m["_기록여부"].tolist())
                     _, rt_fc, _, _, _, r_li = calc_trend_and_forecast_split(df_rt_m["부문_통합_PPM"].tolist(), df_rt_m["_기록여부"].tolist())
                     fig_cmp = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_cmp.add_trace(go.Bar(x=df_dairy_m["월"], y=df_dairy_m["합산_건수"], name="유제품생산 건수", marker_color="#2E75B6"), secondary_y=False)
-                    fig_cmp.add_trace(go.Bar(x=df_rt_m["월"], y=df_rt_m["합산_건수"], name="상온제품 건수", marker_color="#ED7D31"), secondary_y=False)
-                    fig_cmp.add_trace(go.Scatter(x=df_dairy_m["월"], y=df_dairy_m["부문_통합_PPM"], name="유제품생산 PPM", mode="lines+markers", line=dict(color="#002060", width=3)), secondary_y=True)
-                    fig_cmp.add_trace(go.Scatter(x=df_rt_m["월"], y=df_rt_m["부문_통합_PPM"], name="상온제품 PPM", mode="lines+markers", line=dict(color="#C00000", width=3)), secondary_y=True)
+                    fig_cmp.add_trace(go.Bar(x=df_dairy_m["월"], y=df_dairy_m["합산_건수"], name="유제품생산 건수", marker_color="#003876"), secondary_y=False)
+                    fig_cmp.add_trace(go.Bar(x=df_rt_m["월"], y=df_rt_m["합산_건수"], name="상온제품 건수", marker_color="#F59E0B"), secondary_y=False)
+                    fig_cmp.add_trace(go.Scatter(x=df_dairy_m["월"], y=df_dairy_m["부문_통합_PPM"], name="유제품생산 PPM", mode="lines+markers", line=dict(color="#00205B", width=3)), secondary_y=True)
+                    fig_cmp.add_trace(go.Scatter(x=df_rt_m["월"], y=df_rt_m["부문_통합_PPM"], name="상온제품 PPM", mode="lines+markers", line=dict(color="#DC2626", width=3)), secondary_y=True)
                     if 0 <= d_li < 11:
-                        fig_cmp.add_trace(go.Scatter(x=df_dairy_m["월"], y=dairy_fc, name="유제품 예상 추세", mode="lines+markers", line=dict(color="#002060", width=2, dash="dot")), secondary_y=True)
+                        fig_cmp.add_trace(go.Scatter(x=df_dairy_m["월"], y=dairy_fc, name="유제품 예상 추세", mode="lines+markers", line=dict(color="#00205B", width=2, dash="dot")), secondary_y=True)
                     if 0 <= r_li < 11:
-                        fig_cmp.add_trace(go.Scatter(x=df_rt_m["월"], y=rt_fc, name="상온 예상 추세", mode="lines+markers", line=dict(color="#C00000", width=2, dash="dot")), secondary_y=True)
-                    fig_cmp.update_layout(barmode="group", height=430, title=f"📊 {d_lbl} (실적 및 잔여월 예상 추세)")
+                        fig_cmp.add_trace(go.Scatter(x=df_rt_m["월"], y=rt_fc, name="상온 예상 추세", mode="lines+markers", line=dict(color="#DC2626", width=2, dash="dot")), secondary_y=True)
+                    fig_cmp.update_layout(barmode="group", height=430, title=f"📊 {d_lbl} (실적 및 잔여월 예상 추세)", paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
                     st.plotly_chart(fig_cmp, use_container_width=True)
 
             with tab_c3:
@@ -2299,10 +2613,10 @@ else:
                 st.dataframe(df_cv, use_container_width=True, hide_index=True)
 
     # --------------------------------------------------------------------------
-    # [세부 3] 공정 현황 및 특이사항 (가로 스크롤 제거 + 특이사항 최상단 배너 + 초록/노랑/빨강 모니터링 표)
+    # [세부 3] 공정 현황 및 특이사항 (과거 25년 전달사항 제외, 당일·전일 실시간 관제)
     # --------------------------------------------------------------------------
     elif view == "process":
-        st.markdown("<div class='main-title'>3. 공정 현황 및 특이사항 - 금일·전일 생산 및 CCP·배양 실시간 관제</div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>3. 공정 현황 및 특이사항 — 금일·전일 생산 및 CCP·배양 실시간 관제</span></div>", unsafe_allow_html=True)
 
         tab_p1, tab_p2, tab_p3 = st.tabs([
             f"🧃 [상온] 상온제품 공정 관리 일보 (금일 {rt_t_tab} & 전일 {rt_y_tab})",
@@ -2310,37 +2624,26 @@ else:
             f"🧪 [상온] 두유 배양검사 일보 (기준탭: {proc_data['soy_default_tab']})"
         ])
 
-        # [탭 1] 상온제품 공정 관리 일보
         with tab_p1:
             if rt_t is None:
                 st.warning("상온제품 공정 관리 일보 시트 데이터를 불러오지 못했습니다.")
             else:
-                # 1) 최상단 금일 vs 전일 특이사항 전문 브리핑 배너 (가로 스크롤 없이 100% 전문 노출)
                 b_left, b_right = st.columns(2)
                 with b_left:
-                    today_notes = list(rt_t["ster_special_notes"])
-                    if not rt_t["df_issues"].empty:
-                        for _, ir in rt_t["df_issues"].head(3).iterrows():
-                            today_notes.append(f"[전달사항 {ir['기록일자']}] {ir['전달(특이)사항 및 소비기한 조치내역']}")
-                    if today_notes:
-                        notes_html = "<br>".join([f"• {html.escape(n)}" for n in today_notes])
-                        st.markdown(f"<div class='issue-card-warn'><b>⚠️ 금일 [{html.escape(rt_t['tab_title'])}] 현장 특이사항 및 설비 조치 ({len(today_notes)}건)</b><br>{notes_html}</div>", unsafe_allow_html=True)
+                    if today_real_notes:
+                        notes_html = "<br>".join([f"• {html.escape(n)}" for n in today_real_notes])
+                        st.markdown(f"<div class='issue-card-warn'><b>⚠️ 금일 [{html.escape(rt_t['tab_title'])}] 현장 특이사항 및 설비 조치 ({len(today_real_notes)}건)</b><br>{notes_html}</div>", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"<div class='issue-card-ok'><b>🟢 금일 [{html.escape(rt_t['tab_title'])}] 현장 특이사항 없음</b><br>• 가동 호기 및 멸균기 특이사항 없이 정상 생산 중입니다.</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='issue-card-ok'><b>🟢 금일 [{html.escape(rt_t['tab_title'])}] 현장 특이사항 없음</b><br>• 전 가동 호기 및 멸균기 특이사항 없이 정상 생산 중입니다.</div>", unsafe_allow_html=True)
 
                 with b_right:
                     if rt_y is not None:
-                        yest_notes = list(rt_y["ster_special_notes"])
-                        if not rt_y["df_issues"].empty:
-                            for _, ir in rt_y["df_issues"].head(3).iterrows():
-                                yest_notes.append(f"[전달사항 {ir['기록일자']}] {ir['전달(특이)사항 및 소비기한 조치내역']}")
-                        if yest_notes:
-                            yn_html = "<br>".join([f"• {html.escape(n)}" for n in yest_notes])
-                            st.markdown(f"<div class='issue-card-warn'><b>📌 전일 [{html.escape(rt_y['tab_title'])}] 마감 특이사항 기록 ({len(yest_notes)}건)</b><br>{yn_html}</div>", unsafe_allow_html=True)
+                        if yest_real_notes:
+                            yn_html = "<br>".join([f"• {html.escape(n)}" for n in yest_real_notes])
+                            st.markdown(f"<div class='issue-card-warn'><b>📌 전일 [{html.escape(rt_y['tab_title'])}] 마감 특이사항 기록 ({len(yest_real_notes)}건)</b><br>{yn_html}</div>", unsafe_allow_html=True)
                         else:
                             st.markdown(f"<div class='issue-card-ok'><b>🟢 전일 [{html.escape(rt_y['tab_title'])}] 전 호기 특이사항 없이 정상 생산 마감</b><br>• 전일 설비 이상 및 품질 특이사항 기록 없음</div>", unsafe_allow_html=True)
 
-                # 2) 금일 포장호기(A~F) 모니터링 표 (전체 폭, 자동 줄바꿈, 초록/노랑/회색 하이라이트)
                 st.subheader(f"🟢 금일 [{rt_t['tab_title']}] 포장호기별 생산 제품·소비기한·확인시간 ({rt_t['prod_date']})")
                 pack_cols = [
                     {"key": "ho", "label": "포장호기", "width": "10%", "align": "center"},
@@ -2361,8 +2664,7 @@ else:
                 ]
                 st.markdown(render_html_table(pack_cols, pack_rows_html), unsafe_allow_html=True)
 
-                # 3) 금일 멸균기 [CCP-1B / CCP-2P] + 우측 S~V열 기준 통합 관제 표 (가로 스크롤 없음)
-                st.subheader(f"🔥 금일 [{rt_t['tab_title']}] 멸균기 실시간 모니터링 [CCP-1B / CCP-2P] (우측 S~V열 제품 기준 자동 대조)")
+                st.subheader(f"🔥 금일 [{rt_t['tab_title']}] 멸균기 실시간 모니터링 [CCP-1B / CCP-2P] (우측 S~V열 기준 자동 대조)")
                 ster_cols = [
                     {"key": "s_ho", "label": "멸균기 (포장)", "width": "9%", "align": "center"},
                     {"key": "prod", "label": "매칭 제품명 (용량)", "width": "22%", "align": "left"},
@@ -2390,7 +2692,6 @@ else:
                 ]
                 st.markdown(render_html_table(ster_cols, ster_rows_html), unsafe_allow_html=True)
 
-                # 4) 금일 포장기 공정관리 [CCP-3B] 표 (구간 복구 + 초록/빨강 범위 판정)
                 st.subheader(f"🛡️ 금일 [{rt_t['tab_title']}] 포장기 공정관리 [CCP-3B] (농도·분사량·온도·E빔)")
                 ccp3b_cols = [
                     {"key": "item", "label": "점검항목", "width": "10%", "align": "center"},
@@ -2412,12 +2713,10 @@ else:
                     }
                     for ho_nm in ["A호기", "B호기", "C호기", "D호기", "E호기", "F호기"]:
                         v_txt = r3.get(ho_nm, "-")
-                        c_cls = eval_ccp3b_cell(v_txt, r3["관리기준"], ho_nm in rt_t["running_hos"])
-                        row_obj[ho_nm] = {"text": v_txt, "cls": c_cls}
+                        row_obj[ho_nm] = {"text": v_txt, "cls": eval_ccp3b_cell(v_txt, r3["관리기준"])}
                     ccp3b_rows_html.append(row_obj)
                 st.markdown(render_html_table(ccp3b_cols, ccp3b_rows_html), unsafe_allow_html=True)
 
-                # 5) 전일 마감 생산 내역 및 특이사항 전체 폭 표 (오른쪽 잘림 완전 해소)
                 if rt_y is not None:
                     st.markdown("---")
                     st.subheader(f"☑️ 전일 [{rt_y['tab_title']}] 마감 생산 제품 및 멸균·특이사항 전체 내역 ({rt_y['prod_date']})")
@@ -2442,7 +2741,6 @@ else:
                     ]
                     st.markdown(render_html_table(yest_cols, yest_rows_html), unsafe_allow_html=True)
 
-        # [탭 2] 유제품 포장 공정관리 일보 (초록/노랑/빨강 셀 색상 적용)
         with tab_p2:
             sub_m, sub_f = st.tabs([f"🥛 우유 포장 ({proc_data['milk_date']})", f"🍶 발효유 포장 ({proc_data['ferm_date']})"])
             dairy_cols = [
@@ -2498,7 +2796,6 @@ else:
                     df_f_v = df_f_v[df_f_v["가동여부"].str.contains("금일생산", na=False)]
                 st.markdown(render_html_table(dairy_cols, build_dairy_html_rows(df_f_v)), unsafe_allow_html=True)
 
-        # [탭 3] 두유 배양검사 일보 (빈 블록 제외 완료 + 초록색 적합 표시 + 가로 스크롤 제거)
         with tab_p3:
             soy_map = proc_data["soy_tabs_map"]
             if not soy_map:
@@ -2550,10 +2847,10 @@ else:
                         st.dataframe(df_sh, use_container_width=True, hide_index=True)
 
     # --------------------------------------------------------------------------
-    # [세부 4] 협력업체 관리
+    # [세부 4] 협력업체 관리 (서류심사 확정 시트2 + 등급외_미비사항 탭 실시간 반영)
     # --------------------------------------------------------------------------
     elif view == "supplier":
-        st.markdown("<div class='main-title'>4. 협력업체 관리 - 서류심사 실시간 집계 및 미비사항</div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>4. 협력업체 관리 — 2026년 원·부자재 및 OEM 서류심사 확정 집계</span></div>", unsafe_allow_html=True)
         if df_sup_master.empty:
             st.error("협력업체 심사 결과 DB를 불러오지 못했습니다.")
         else:
@@ -2576,105 +2873,154 @@ else:
             if kw_s:
                 df_sf = df_sf[df_sf["업체명"].str.contains(kw_s, case=False, na=False) | df_sf["품목"].str.contains(kw_s, case=False, na=False)]
 
-            st.dataframe(df_sf, use_container_width=True, hide_index=True, height=385)
+            st.dataframe(df_sf, use_container_width=True, hide_index=True, height=390)
 
             st.subheader("■ 등급 외 업체 주요 미비사항")
-            uc1, uc2 = st.columns([1, 1.4])
+            uc1, uc2 = st.columns([1, 1.45])
             with uc1:
                 st.dataframe(df_sup_under_c, use_container_width=True, hide_index=True)
             with uc2:
                 st.dataframe(df_sup_under_d, use_container_width=True, hide_index=True)
 
     # --------------------------------------------------------------------------
-    # [세부 5] 심사점수 (빈칸 유지)
-    # --------------------------------------------------------------------------
-    elif view == "audit":
-        st.markdown("<div class='main-title'>5. 심사점수</div>", unsafe_allow_html=True)
-        st.info("현재 연동된 구글 시트가 없어 빈칸으로 유지 중입니다.")
-        st.dataframe(pd.DataFrame([{"구분": "-", "목표": "-", "실적": "-", "비고": "-"}]), use_container_width=True, hide_index=True)
-
-    # --------------------------------------------------------------------------
-    # [세부 6] 표시사항 진행 현황
+    # [세부 6] 표시사항 진행 현황 (전년 대비 업무량 증가 및 카테고리·생산처 심층 분석 추가)
     # --------------------------------------------------------------------------
     elif view == "label_status":
-        st.markdown("<div class='main-title'>6. 표시사항 진행 현황 - 현재 검토중(등록팀별) 및 연도·월별 완료 집계</div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>6. 표시사항 진행 현황 — 전년 대비 업무량 증가 분석 및 실시간 검토 현황</span></div>", unsafe_allow_html=True)
         if df_label_status.empty:
             st.error("표시사항 현황 시트 데이터를 불러오지 못했습니다.")
         else:
             if broken_date_cnt > 0:
-                st.warning(f"시트 원본 셀에 텍스트 '#######'로 저장되어 날짜를 읽을 수 없는 행이 {broken_date_cnt}건 있습니다. 원본 엑셀에서 등록일 열 너비를 넓혀 다시 붙여넣으시면 연도·월별 차트에 즉시 반영됩니다.")
+                st.warning(f"참고: 시트 원본에 텍스트 '#######'로 저장되어 연도 분류에서 제외된 행이 {broken_date_cnt}건 있습니다.")
 
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("전체 등록 건수", f"{len(df_label_status):,} 건")
-            k2.metric("🔴 현재 식품안전팀 검토중", f"{reviewing_cnt:,} 건")
-            k3.metric("🟢 누적 검토 완료", f"{completed_cnt:,} 건")
-            excl_cnt = int((df_label_status["분류"] == "제외(개시/준비·보류)").sum())
-            k4.metric("⚪ 개시/준비·보류 (제외)", f"{excl_cnt:,} 건")
+            df_valid_lb = df_label_status[df_label_status["분류"] != "제외(개시/준비·보류)"].copy()
+            df_2025 = df_valid_lb[df_valid_lb["_yr_num"] == 2025]
+            df_2026 = df_valid_lb[df_valid_lb["_yr_num"] == 2026]
 
-            st.subheader(f"🔴 현재 [식품안전팀 검토중] 실시간 목록 ({reviewing_cnt}건)")
-            show_cols = [c for c in ["*docNo", "상태", "제목", "요청부서", "대분류(마케팅 카테고리)", "보관방법", "생산처", "검토 포장재 유형", "등록일자", "최종수정자"] if c in df_label_status.columns]
-            rc1, rc2 = st.columns([2.2, 1])
-            with rc1:
+            cnt_25_all = len(df_2025)
+            cnt_26_all = len(df_2026)
+
+            max_m_26 = int(df_2026["_mo_num"].max()) if not df_2026.empty and df_2026["_mo_num"].max() > 0 else datetime.now().month
+            active_m_25 = max(int(df_2025[df_2025["_mo_num"] > 0]["_mo_num"].nunique()), 1) if not df_2025.empty else 12
+            active_m_26 = max(int(df_2026[df_2026["_mo_num"] > 0]["_mo_num"].nunique()), 1) if not df_2026.empty else max_m_26
+
+            cnt_25_ytd = len(df_2025[(df_2025["_mo_num"] >= 1) & (df_2025["_mo_num"] <= max_m_26)])
+            cnt_26_ytd = len(df_2026[(df_2026["_mo_num"] >= 1) & (df_2026["_mo_num"] <= max_m_26)])
+            ytd_diff = cnt_26_ytd - cnt_25_ytd
+            ytd_pct = round((ytd_diff / cnt_25_ytd) * 100, 1) if cnt_25_ytd > 0 else 0.0
+
+            m_avg_25 = round(cnt_25_all / active_m_25, 1) if cnt_25_all > 0 else 0.0
+            m_avg_26 = round(cnt_26_all / active_m_26, 1) if cnt_26_all > 0 else 0.0
+            avg_diff = round(m_avg_26 - m_avg_25, 1)
+
+            tab_lb1, tab_lb2, tab_lb3 = st.tabs([
+                "📈 전년 대비(2025 vs 2026) 업무량 증가 및 급증 제품군 분석",
+                f"🔴 현재 검토중 목록 ({reviewing_cnt}건) 및 연도·월별 추이",
+                "📋 전체 표시사항 심의 이력 조회"
+            ])
+
+            # [탭 1] 담당자 업무량 증가 어필용 전년 대비 분석
+            with tab_lb1:
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric(f"2026년 누적 검토 (1~{max_m_26}월)", f"{cnt_26_all:,} 건", f"동기간 전년비 {ytd_diff:+,}건 ({ytd_pct:+.1f}%)")
+                m2.metric("전년도(2025년) 연간 실적", f"{cnt_25_all:,} 건", f"25년 1~{max_m_26}월 동기간 {cnt_25_ytd:,}건")
+                m3.metric("월평균 검토 처리량 변화", f"월 {m_avg_26} 건", f"25년 월 {m_avg_25}건 대비 {avg_diff:+.1f}건/월")
+                m4.metric("현재 실시간 검토 진행", f"{reviewing_cnt:,} 건", f"누적 완료 총 {completed_cnt:,}건")
+
+                cat_col_nm = "대분류(마케팅 카테고리)" if "대분류(마케팅 카테고리)" in df_valid_lb.columns else None
+                top_growth_txt = "-"
+                df_cat_cmp = pd.DataFrame()
+                if cat_col_nm:
+                    c25 = df_2025.groupby(cat_col_nm).size().rename("2025년_건수")
+                    c26 = df_2026.groupby(cat_col_nm).size().rename("2026년_건수")
+                    df_cat_cmp = pd.concat([c25, c26], axis=1).fillna(0).astype(int).reset_index()
+                    df_cat_cmp[cat_col_nm] = df_cat_cmp[cat_col_nm].replace("", "미분류")
+                    df_cat_cmp["증감(건)"] = df_cat_cmp["2026년_건수"] - df_cat_cmp["2025년_건수"]
+                    df_cat_cmp["26년_비중(%)"] = round(df_cat_cmp["2026년_건수"] / max(cnt_26_all, 1) * 100, 1)
+                    df_cat_cmp = df_cat_cmp.sort_values("2026년_건수", ascending=False)
+                    if not df_cat_cmp.empty:
+                        top_g = df_cat_cmp.sort_values("증감(건)", ascending=False).iloc[0]
+                        top_growth_txt = f"{top_g[cat_col_nm]} (25년 {top_g['2025년_건수']}건 → 26년 {top_g['2026년_건수']}건, {top_g['증감(건)']:+d}건)"
+
+                st.markdown(f"""
+                <div class="forecast-box">
+                    <b>📊 표시사항 심의·검토 업무량 증가 팩트 요약</b><br>
+                    • <b>동기간 처리량 비교 :</b> 1~{max_m_26}월 동기간 기준 2025년 <b>{cnt_25_ytd:,}건</b>에서 2026년 <b>{cnt_26_ytd:,}건</b>으로 <b>{ytd_diff:+,}건({ytd_pct:+.1f}%)</b> 변동했으며, 월평균 처리 건수는 <b>{m_avg_25}건/월 → {m_avg_26}건/월({avg_diff:+.1f}건/월)</b> 수준입니다.<br>
+                    • <b>최다 증가 제품 카테고리 :</b> <b>{html.escape(top_growth_txt)}</b> 제품군을 중심으로 표시사항 신규·변경 검토 건수가 집중되고 있습니다.
+                </div>
+                """, unsafe_allow_html=True)
+
+                g_left, g_right = st.columns(2)
+                with g_left:
+                    m_cmp_rows = []
+                    for m_i in range(1, 13):
+                        m_cmp_rows.append({
+                            "월": f"{m_i}월",
+                            "2025년": int((df_2025["_mo_num"] == m_i).sum()),
+                            "2026년": int((df_2026["_mo_num"] == m_i).sum())
+                        })
+                    df_mcmp = pd.DataFrame(m_cmp_rows)
+                    fig_mcmp = go.Figure()
+                    fig_mcmp.add_trace(go.Bar(x=df_mcmp["월"], y=df_mcmp["2025년"], name="2025년 건수", marker_color="#CBD5E1", text=df_mcmp["2025년"], textposition="outside"))
+                    fig_mcmp.add_trace(go.Bar(x=df_mcmp["월"], y=df_mcmp["2026년"], name="2026년 건수", marker_color="#003876", text=df_mcmp["2026년"], textposition="outside"))
+                    fig_mcmp.update_layout(barmode="group", height=360, title="📅 월별 표시사항 심의 건수 비교 (2025년 vs 2026년)", paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
+                    st.plotly_chart(fig_mcmp, use_container_width=True)
+
+                with g_right:
+                    if not df_cat_cmp.empty:
+                        fig_cat = go.Figure()
+                        fig_cat.add_trace(go.Bar(x=df_cat_cmp[cat_col_nm], y=df_cat_cmp["2025년_건수"], name="2025년", marker_color="#94A3B8", text=df_cat_cmp["2025년_건수"], textposition="outside"))
+                        fig_cat.add_trace(go.Bar(x=df_cat_cmp[cat_col_nm], y=df_cat_cmp["2026년_건수"], name="2026년", marker_color="#0052A5", text=df_cat_cmp["2026년_건수"], textposition="outside"))
+                        fig_cat.update_layout(barmode="group", height=360, title="🥛 제품 대분류(카테고리)별 검토 건수 증가 비교", paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
+                        st.plotly_chart(fig_cat, use_container_width=True)
+
+                b_col1, b_col2, b_col3 = st.columns(3)
+                with b_col1:
+                    st.markdown("##### 📦 제품 카테고리별 증감표")
+                    if not df_cat_cmp.empty:
+                        st.dataframe(df_cat_cmp, use_container_width=True, hide_index=True)
+                with b_col2:
+                    st.markdown("##### 🏭 2026년 주요 생산처 TOP 10")
+                    if "생산처" in df_2026.columns and not df_2026.empty:
+                        prod_site_df = df_2026["생산처"].replace("", "미기입").value_counts().head(10).reset_index()
+                        prod_site_df.columns = ["생산처(자체/OEM)", "2026년_검토건수"]
+                        st.dataframe(prod_site_df, use_container_width=True, hide_index=True)
+                with b_col3:
+                    st.markdown("##### 🏷️ 2026년 포장재 유형 & 요청부서")
+                    if "검토 포장재 유형" in df_2026.columns and not df_2026.empty:
+                        pkg_df = df_2026["검토 포장재 유형"].replace("", "미기입").value_counts().head(10).reset_index()
+                        pkg_df.columns = ["검토 포장재 유형", "2026년_검토건수"]
+                        st.dataframe(pkg_df, use_container_width=True, hide_index=True)
+
+            # [탭 2] 현재 검토중 목록 및 부서·연도별 추이
+            with tab_lb2:
+                show_cols = [c for c in ["*docNo", "상태", "제목", "요청부서", "대분류(마케팅 카테고리)", "보관방법", "생산처", "검토 포장재 유형", "등록일자", "최종수정자"] if c in df_label_status.columns]
+                st.subheader(f"🔴 현재 [식품안전팀 검토중] 전체 목록 ({reviewing_cnt}건)")
                 st.dataframe(df_label_status[df_label_status["분류"] == "식품안전팀 검토중"][show_cols], use_container_width=True, hide_index=True)
-            with rc2:
-                if "요청부서" in df_label_status.columns:
-                    rev_dept = df_label_status[df_label_status["분류"] == "식품안전팀 검토중"].groupby("요청부서").size().reset_index(name="검토중_건수")
-                    fig_rd = go.Figure(go.Bar(x=rev_dept["요청부서"], y=rev_dept["검토중_건수"], marker_color="#C00000", text=rev_dept["검토중_건수"], textposition="auto"))
-                    fig_rd.update_layout(height=260, title="📌 등록팀별 현재 검토중 건수", margin=dict(t=40, b=10, l=10, r=10))
-                    st.plotly_chart(fig_rd, use_container_width=True)
 
-            st.markdown("---")
-            df_valid_lb = df_label_status[df_label_status["분류"] != "제외(개시/준비·보류)"]
-            yc1, yc2 = st.columns([1, 2])
-            with yc1:
-                st.subheader("📊 연도별 완료 및 검토중 건수")
-                yr_grp = df_valid_lb.groupby(["등록연도", "분류"]).size().unstack(fill_value=0).reset_index()
-                for cname in ["검토완료(확인필)", "식품안전팀 검토중"]:
-                    if cname not in yr_grp.columns:
-                        yr_grp[cname] = 0
-                yr_grp["합계"] = yr_grp["검토완료(확인필)"] + yr_grp["식품안전팀 검토중"]
-                fig_yr = go.Figure()
-                fig_yr.add_trace(go.Bar(x=yr_grp["등록연도"], y=yr_grp["검토완료(확인필)"], name="검토완료", marker_color="#44546A", text=yr_grp["검토완료(확인필)"], textposition="auto"))
-                fig_yr.add_trace(go.Bar(x=yr_grp["등록연도"], y=yr_grp["식품안전팀 검토중"], name="검토중", marker_color="#ED7D31", text=yr_grp["식품안전팀 검토중"], textposition="auto"))
-                fig_yr.update_layout(barmode="stack", height=320)
-                st.plotly_chart(fig_yr, use_container_width=True)
-                st.dataframe(yr_grp, use_container_width=True, hide_index=True)
+                if "요청부서" in df_valid_lb.columns:
+                    st.subheader("🏢 요청부서(등록팀)별 2025년 vs 2026년 의뢰 현황")
+                    d25 = df_2025.groupby("요청부서").size().rename("2025년")
+                    d26 = df_2026.groupby("요청부서").size().rename("2026년")
+                    d_now = df_valid_lb[df_valid_lb["분류"] == "식품안전팀 검토중"].groupby("요청부서").size().rename("현재_검토중")
+                    dept_cmp = pd.concat([d25, d26, d_now], axis=1).fillna(0).astype(int).reset_index()
+                    dept_cmp["증감(26-25)"] = dept_cmp["2026년"] - dept_cmp["2025년"]
+                    dept_cmp = dept_cmp.sort_values("2026년", ascending=False)
+                    st.dataframe(dept_cmp, use_container_width=True, hide_index=True)
 
-            with yc2:
-                real_years = [y for y in sorted(df_valid_lb["등록연도"].unique().tolist(), reverse=True) if y != "날짜미상"]
-                sel_lb_yr = st.radio("월별 집계 연도 선택", ["전체 연도"] + real_years, horizontal=True)
-                df_mb = df_valid_lb if sel_lb_yr == "전체 연도" else df_valid_lb[df_valid_lb["등록연도"] == sel_lb_yr]
-                m_list = []
-                for ms in CALENDAR_MONTHS:
-                    d_cnt = int(((df_mb["등록월"] == ms) & (df_mb["분류"] == "검토완료(확인필)")).sum())
-                    i_cnt = int(((df_mb["등록월"] == ms) & (df_mb["분류"] == "식품안전팀 검토중")).sum())
-                    m_list.append({"월": ms, "검토완료(확인필)": d_cnt, "식품안전팀 검토중": i_cnt, "합계": d_cnt + i_cnt})
-                df_m_lb = pd.DataFrame(m_list)
-                fig_ml = go.Figure()
-                fig_ml.add_trace(go.Bar(x=df_m_lb["월"], y=df_m_lb["검토완료(확인필)"], name="검토완료", marker_color="#2E75B6", text=df_m_lb["검토완료(확인필)"], textposition="auto"))
-                fig_ml.add_trace(go.Bar(x=df_m_lb["월"], y=df_m_lb["식품안전팀 검토중"], name="검토중", marker_color="#ED7D31", text=df_m_lb["식품안전팀 검토중"], textposition="auto"))
-                fig_ml.update_layout(barmode="stack", height=320, title=f"📈 {sel_lb_yr} 월별(1~12월) 완료 및 검토중 건수")
-                st.plotly_chart(fig_ml, use_container_width=True)
-                st.dataframe(df_m_lb, use_container_width=True, hide_index=True)
-
-            if "요청부서" in df_valid_lb.columns:
-                st.subheader("🏢 등록팀(요청부서)별 누적 완료 및 검토중 현황")
-                dept_df = df_valid_lb.groupby(["요청부서", "분류"]).size().unstack(fill_value=0).reset_index()
-                for cname in ["검토완료(확인필)", "식품안전팀 검토중"]:
-                    if cname not in dept_df.columns:
-                        dept_df[cname] = 0
-                dept_df["합계"] = dept_df["검토완료(확인필)"] + dept_df["식품안전팀 검토중"]
-                dept_df = dept_df.sort_values("합계", ascending=False)
-                st.dataframe(dept_df, use_container_width=True, hide_index=True)
-
-            st.subheader("📋 표시사항 현황 전체 목록 조회")
-            st.dataframe(df_label_status[show_cols + ["분류", "등록연도", "등록월"]], use_container_width=True, hide_index=True, height=400)
+            with tab_lb3:
+                show_cols = [c for c in ["*docNo", "상태", "제목", "요청부서", "대분류(마케팅 카테고리)", "보관방법", "생산처", "검토 포장재 유형", "등록일자", "최종수정자"] if c in df_label_status.columns]
+                kw_lb = st.text_input("🔍 품목 제목 / 요청부서 / 생산처 검색")
+                df_lv = df_label_status[show_cols + ["분류", "등록연도", "등록월"]]
+                if kw_lb:
+                    df_lv = df_lv[df_lv.astype(str).apply(lambda x: x.str.contains(kw_lb, case=False, na=False)).any(axis=1)]
+                st.dataframe(df_lv, use_container_width=True, hide_index=True, height=450)
 
     # --------------------------------------------------------------------------
-    # [세부 7] 표시사항 특이사항 (원자재 표시사항 DB 단독 구성)
+    # [세부 7] 표시사항 특이사항 (원자재 표시사항 DB 단독)
     # --------------------------------------------------------------------------
     elif view == "label_issue":
-        st.markdown("<div class='main-title'>7. 표시사항 특이사항 - 원자재 표시사항 DB 검증 및 알레르기 현황</div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>7. 표시사항 특이사항 — 원자재 표시사항 DB 검증 및 알레르기 현황</span></div>", unsafe_allow_html=True)
         r1, r2, r3 = st.columns(3)
         r1.metric("전체 원재료 마스터 수", f"{raw_master_cnt:,} 건")
         r2.metric("원자재 표시사항 등록 건수", f"{sub_raw_cnt:,} 건")
@@ -2686,3 +3032,73 @@ else:
             raw_kw = st.text_input("🔍 원재료명 / 제조원 / 공급사(판매원) 검색")
             df_rv = df_raw_sub[df_raw_sub.astype(str).apply(lambda x: x.str.contains(raw_kw, case=False, na=False)).any(axis=1)] if raw_kw else df_raw_sub
             st.dataframe(df_rv, use_container_width=True, hide_index=True)
+
+    # --------------------------------------------------------------------------
+    # [세부 5, 8~12] 수동 관리 KPI 세부 조회 및 숫자/문구 실시간 변경 화면
+    # --------------------------------------------------------------------------
+    elif view in st.session_state["manual_kpis"]:
+        info = st.session_state["manual_kpis"][view]
+        st.markdown(f"<div class='yonsei-header-bar'><span class='yonsei-title'>{html.escape(info['title'])} — 세부 현황 및 수치 편집</span></div>", unsafe_allow_html=True)
+
+        c_preview, c_edit = st.columns([1.15, 1.35])
+
+        with c_preview:
+            st.subheader("📌 현재 현황판 표시 데이터")
+            st.markdown(f"""
+            <div class="forecast-box">
+                • <b>목표 :</b> {html.escape(info['target_text'])}<br>
+                • <b>실적 :</b> {html.escape(info['actual_text'])}<br>
+                • <b>보조 요약 :</b> {html.escape(info['sub_badge'])}
+            </div>
+            """, unsafe_allow_html=True)
+            if info["has_chart"]:
+                st.plotly_chart(
+                    draw_mini_bar(float(info["target_num"]), float(info["actual_num"]), suffix=info["suffix"]),
+                    use_container_width=True
+                )
+            st.markdown(f"##### 📋 {info['notes_title']}")
+            for line in info["notes"]:
+                st.write(f"- {line}")
+
+        with c_edit:
+            st.subheader("✏️ 수치 및 세부 내역 직접 수정")
+            with st.form(key=f"form_{view}"):
+                new_t_txt = st.text_input("목표 표시 문구", value=info["target_text"])
+                new_a_txt = st.text_input("실적 표시 문구", value=info["actual_text"])
+                new_badge = st.text_input("하단 배지 문구", value=info["sub_badge"])
+
+                sig_opts = ["green", "yellow", "red", "gray"]
+                sig_labels = {"green": "🟢 양호 (초록)", "yellow": "🟡 주의 (노랑)", "red": "🔴 경고 (빨강)", "gray": "⚪ 대기 (회색)"}
+                new_sig = st.selectbox(
+                    "신호등 상태 선택",
+                    sig_opts,
+                    index=sig_opts.index(info["signal"]) if info["signal"] in sig_opts else 0,
+                    format_func=lambda x: sig_labels[x]
+                )
+
+                if info["has_chart"]:
+                    nc1, nc2 = st.columns(2)
+                    with nc1:
+                        new_t_num = st.number_input("그래프 목표 숫자", value=float(info["target_num"]), step=0.1)
+                    with nc2:
+                        new_a_num = st.number_input("그래프 실적 숫자", value=float(info["actual_num"]), step=0.1)
+                else:
+                    new_t_num, new_a_num = info["target_num"], info["actual_num"]
+
+                new_notes_title = st.text_input("세부 메모 소제목", value=info["notes_title"])
+                new_notes_raw = st.text_area("세부 항목 (줄바꿈으로 구분)", value="\n".join(info["notes"]), height=130)
+
+                submitted = st.form_submit_button("💾 변경사항 즉시 적용")
+                if submitted:
+                    st.session_state["manual_kpis"][view].update({
+                        "target_text": new_t_txt,
+                        "actual_text": new_a_txt,
+                        "sub_badge": new_badge,
+                        "signal": new_sig,
+                        "target_num": float(new_t_num),
+                        "actual_num": float(new_a_num),
+                        "notes_title": new_notes_title,
+                        "notes": [ln.strip() for ln in new_notes_raw.splitlines() if ln.strip()]
+                    })
+                    st.success("수치와 문구가 업데이트되었습니다. 상단 돌아가기 버튼을 누르면 첫 화면에도 즉시 반영됩니다.")
+                    st.rerun()
