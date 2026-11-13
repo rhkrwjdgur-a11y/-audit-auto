@@ -1,7 +1,6 @@
-streamlit
-pandas
-google-generativeai
-python-docx
-PyPDF2
-openpyxl
-Pillow
+streamlit>=1.38.0
+pandas>=2.2.0
+plotly>=5.24.0
+gspread>=6.1.2
+google-auth>=2.34.0
+openpyxl>=3.1.5
