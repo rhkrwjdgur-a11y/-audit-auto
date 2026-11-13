@@ -176,34 +176,35 @@ st.markdown("""
     .stApp {
         background-color: #F4F7FA;
     }
-    /* Streamlit 상단 고정 헤더 바 투명화 */
+    /* 상단 고정 툴바 배경을 페이지 배경색(#F4F7FA)과 통일 */
     header[data-testid="stHeader"],
     [data-testid="stAppHeader"] {
-        background: transparent !important;
-        background-color: transparent !important;
+        background-color: #F4F7FA !important;
+        height: 3.5rem !important;
     }
-    /* 최신 Streamlit 메인 컨테이너(stMainBlockContainer) 상단 여백 강제 확보 */
+    /* 메인 컨테이너 상단 여백 확보 */
     div[data-testid="stMainBlockContainer"],
     div[data-testid="stAppViewBlockContainer"],
+    section.main > div.block-container,
     .stMainBlockContainer,
     .block-container {
-        padding-top: 4.8rem !important;
+        padding-top: 5.0rem !important;
         padding-bottom: 2.5rem !important;
         max-width: 97% !important;
     }
-    /* 마크다운 영역 상단 글자 잘림 차단 */
-    div[data-testid="stMarkdownContainer"] {
-        overflow: visible !important;
+    /* 본문 스피너 여백 */
+    div[data-testid="stSpinner"] {
+        margin-top: 1.5rem !important;
     }
-    /* 상단 메인 타이틀 (내부 상단 여백 및 줄높이 확보) */
+    /* 상단 메인 타이틀 */
     .yonsei-header-bar {
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
         border-bottom: 3px solid #00205B;
-        padding-top: 16px !important;
+        padding-top: 8px !important;
         padding-bottom: 10px !important;
-        margin-top: 6px !important;
+        margin-top: 0 !important;
         margin-bottom: 8px !important;
         overflow: visible !important;
     }
@@ -213,8 +214,9 @@ st.markdown("""
         font-weight: 800;
         color: #00205B;
         letter-spacing: -0.5px;
-        line-height: 1.45 !important;
-        padding-top: 4px !important;
+        line-height: 1.6 !important;
+        padding-top: 6px !important;
+        overflow: visible !important;
     }
     .yonsei-subtitle {
         font-size: 13.5px;
@@ -2001,9 +2003,24 @@ def trigger_manual_sync():
     st.session_state.pop("ax_brief_text", None)
 
 
+# 상단 툴바 가림 방지용 고정 여백 (로딩·메인·세부 화면 모두 적용)
+st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+
 if "kpi_bundle" not in st.session_state:
-    with st.spinner("연세유업 품질안전부문 KPI 실시간 데이터를 병렬로 불러오는 중입니다..."):
-        st.session_state["kpi_bundle"] = load_all_sheets_parallel()
+    loading_box = st.empty()
+    loading_box.markdown(
+        """
+        <div style="padding: 18px 22px; background: #FFFFFF;
+                    border: 1px solid #DCE4EE; border-left: 5px solid #00205B;
+                    border-radius: 10px; font-size: 15px; font-weight: 700; color: #00205B;
+                    box-shadow: 0 2px 8px rgba(0, 32, 91, 0.08);">
+            ⏳ 연세유업 품질안전부문 KPI 실시간 데이터를 병렬로 불러오는 중입니다...
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.session_state["kpi_bundle"] = load_all_sheets_parallel()
+    loading_box.empty()
 
 bundle = st.session_state["kpi_bundle"]
 df_cost = bundle["df_cost"]
