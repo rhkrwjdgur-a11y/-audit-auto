@@ -164,7 +164,7 @@ SHEET_NAMES = {
 }
 
 # ==============================================================================
-# 2. 연세유업 브랜드 컬러 기반 모던 포털 CSS (상단 제목 잘림 해결 버전)
+# 2. 연세유업 브랜드 컬러 기반 모던 포털 CSS (최신 Streamlit 컨테이너 및 제목 잘림 해결)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -176,32 +176,45 @@ st.markdown("""
     .stApp {
         background-color: #F4F7FA;
     }
-    /* Streamlit 기본 상단 헤더 바 배경 투명화 (제목 가림 방지) */
-    header[data-testid="stHeader"] {
+    /* Streamlit 상단 고정 헤더 바 투명화 */
+    header[data-testid="stHeader"],
+    [data-testid="stAppHeader"] {
+        background: transparent !important;
         background-color: transparent !important;
     }
-    /* 상단 여백을 1.8rem -> 8.8rem으로 확보하여 상단 툴바와 겹침 차단 */
+    /* 최신 Streamlit 메인 컨테이너(stMainBlockContainer) 상단 여백 강제 확보 */
+    div[data-testid="stMainBlockContainer"],
+    div[data-testid="stAppViewBlockContainer"],
+    .stMainBlockContainer,
     .block-container {
-        padding-top: 8.8rem !important;
+        padding-top: 4.8rem !important;
         padding-bottom: 2.5rem !important;
-        max-width: 97%;
+        max-width: 97% !important;
     }
-    /* 상단 메인 타이틀 */
+    /* 마크다운 영역 상단 글자 잘림 차단 */
+    div[data-testid="stMarkdownContainer"] {
+        overflow: visible !important;
+    }
+    /* 상단 메인 타이틀 (내부 상단 여백 및 줄높이 확보) */
     .yonsei-header-bar {
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
         border-bottom: 3px solid #00205B;
-        padding-top: 6px;
-        padding-bottom: 10px;
-        margin-bottom: 8px;
+        padding-top: 16px !important;
+        padding-bottom: 10px !important;
+        margin-top: 6px !important;
+        margin-bottom: 8px !important;
+        overflow: visible !important;
     }
     .yonsei-title {
+        display: inline-block;
         font-size: 27px;
         font-weight: 800;
         color: #00205B;
         letter-spacing: -0.5px;
-        line-height: 1.35;
+        line-height: 1.45 !important;
+        padding-top: 4px !important;
     }
     .yonsei-subtitle {
         font-size: 13.5px;
@@ -262,6 +275,7 @@ st.markdown("""
         font-weight: 700 !important;
         border: 1.5px solid #CBD5E1 !important;
         border-radius: 8px !important;
+        margin-top: 14px !important;
     }
     button[kind="secondary"]:hover,
     button[data-testid="baseButton-secondary"]:hover,
@@ -322,9 +336,9 @@ st.markdown("""
         background-color: #94A3B8;
         border: 2px solid #475569;
     }
-    /* 3번 카드 전용: 2안(공정 체크리스트) + 3안(특이사항 스크롤 전광판) 결합 보드 */
+    /* 3번 카드 전용: 옆 그래프 카드들과 하단 높이 일직선 정렬 */
     .proc-hybrid-wrap {
-        height: 246px;
+        height: 226px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -333,7 +347,7 @@ st.markdown("""
     .proc-check-list {
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 5px;
     }
     .proc-check-row {
         display: flex;
@@ -342,7 +356,7 @@ st.markdown("""
         background-color: #F8FAFC;
         border: 1px solid #E2E8F0;
         border-radius: 7px;
-        padding: 5px 9px;
+        padding: 4px 9px;
         font-size: 12.5px;
     }
     .proc-check-label {
@@ -365,13 +379,13 @@ st.markdown("""
     .badge-warn { background-color: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
     .badge-err { background-color: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
     .proc-issue-board {
-        margin-top: 7px;
+        margin-top: 6px;
         background-color: #F8FAFC;
         border: 1px solid #DCE4EE;
         border-left: 4px solid #003876;
         border-radius: 7px;
-        padding: 7px 10px;
-        height: 112px;
+        padding: 6px 10px;
+        height: 98px;
         overflow-y: auto;
         font-size: 12px;
         line-height: 1.5;
@@ -383,7 +397,7 @@ st.markdown("""
         border: 1px solid #E2E8F0;
         border-radius: 8px;
         padding: 9px 11px;
-        height: 150px;
+        height: 146px;
         overflow-y: auto;
         margin-top: 4px;
         font-size: 12.3px;
@@ -489,7 +503,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # ==============================================================================
 # 3. Google 인증 및 병렬 시트 오픈 유틸리티
