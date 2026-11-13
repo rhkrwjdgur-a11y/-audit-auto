@@ -164,7 +164,7 @@ SHEET_NAMES = {
 }
 
 # ==============================================================================
-# 2. 연세유업 브랜드 컬러 기반 모던 포털 CSS
+# 2. 연세유업 브랜드 컬러 기반 모던 포털 CSS (상단 제목 잘림 해결 버전)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -176,9 +176,14 @@ st.markdown("""
     .stApp {
         background-color: #F4F7FA;
     }
+    /* Streamlit 기본 상단 헤더 바 배경 투명화 (제목 가림 방지) */
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
+    }
+    /* 상단 여백을 1.8rem -> 3.8rem으로 확보하여 상단 툴바와 겹침 차단 */
     .block-container {
-        padding-top: 1.8rem;
-        padding-bottom: 2.5rem;
+        padding-top: 3.8rem !important;
+        padding-bottom: 2.5rem !important;
         max-width: 97%;
     }
     /* 상단 메인 타이틀 */
@@ -187,6 +192,7 @@ st.markdown("""
         justify-content: space-between;
         align-items: flex-end;
         border-bottom: 3px solid #00205B;
+        padding-top: 6px;
         padding-bottom: 10px;
         margin-bottom: 8px;
     }
@@ -195,6 +201,7 @@ st.markdown("""
         font-weight: 800;
         color: #00205B;
         letter-spacing: -0.5px;
+        line-height: 1.35;
     }
     .yonsei-subtitle {
         font-size: 13.5px;
@@ -370,7 +377,7 @@ st.markdown("""
         line-height: 1.5;
         color: #1E293B;
     }
-    /* 카드 내 스크롤 목록 박스 (6번 전건 리스트, 7·10·12번 요약 리스트) */
+    /* 카드 내 스크롤 목록 박스 */
     .card-scroll-box {
         background-color: #F8FAFC;
         border: 1px solid #E2E8F0;
@@ -425,7 +432,7 @@ st.markdown("""
         line-height: 1.6;
         color: #78350F;
     }
-    /* 모던 가로줄 자동줄바꿈 관제 표 (세로 격자선 제거, 포털형 배지 스타일) */
+    /* 모던 가로줄 자동줄바꿈 관제 표 */
     .mon-table {
         width: 100%;
         border-collapse: collapse;
