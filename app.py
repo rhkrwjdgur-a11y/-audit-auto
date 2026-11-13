@@ -137,6 +137,12 @@ def get_gspread_client():
     raise SheetLoadError("구글 인증 실패 - " + " / ".join(errs))
 
 
+def short_err(e, n=160):
+    """HTML 에러 페이지 등 긴 메시지를 잘라서 표시"""
+    txt = re.sub(r"\s+", " ", repr(e))
+    return txt[:n] + ("..." if len(txt) > n else "")
+
+
 def open_sheet(key):
     client = get_gspread_client()
     title = SHEET_NAMES[key]
@@ -147,11 +153,11 @@ def open_sheet(key):
         try:
             return client.open_by_url(v) if v.startswith("http") else client.open_by_key(v)
         except Exception as e:
-            errs.append(f"sheet_urls.{key} 열기 실패: {repr(e)}")
+            errs.append(f"sheet_urls.{key} 열기 실패: {short_err(e)}")
     try:
         return client.open(title)
     except Exception as e:
-        errs.append(f"파일명 '{title}' 열기 실패: {repr(e)}")
+        errs.append(f"파일명 '{title}' 열기 실패: {short_err(e)}")
     raise SheetLoadError(
         f"'{title}' 시트를 열 수 없습니다. Secrets [sheet_urls]의 '{key}' 값과 시트 공유 권한을 확인하세요. ({' / '.join(errs)})"
     )
@@ -307,27 +313,44 @@ def load_cost_data():
     return df
 
 
-@st.cache_data(ttl=300)
-def load_claim_data():
-    sh = open_sheet("claim")
-    rows = sh.get_worksheet(0).get_all_values()
+def _find_claim_type_col(rows):
+    """'유형' 헤더가 있는 열 위치를 찾는다. 없으면 '합계'가 처음 나오는 열(앞 5칸)로 추정."""
+    for r in rows[:12]:
+        for i, c in enumerate(r):
+            if str(c).replace(" ", "") == "유형":
+                return i
+    for r in rows:
+        for i in range(min(5, len(r))):
+            if str(r[i]).replace(" ", "") == "합계":
+                return i
+    return None
+
+
+def _parse_claim_rows(rows):
+    """클레임 탭 한 장을 파싱. 병합 셀(연도)은 첫 칸에만 값이 오므로 다음 연도가 나올 때까지 유지(forward-fill)."""
+    type_col = _find_claim_type_col(rows)
+    if type_col is None:
+        return []
     cat_list = []
-    current_year = "2026년"
-    for r in rows[3:]:
-        if not any(r):
+    current_year = None
+    for r in rows:
+        if len(r) <= type_col + 3:
             continue
-        first = str(r[0]).strip()
-        second = str(r[1]).strip() if len(r) > 1 else ""
-        if first in ["2026년", "2025년"]:
-            current_year, cat_name, vals = first, second, r[2:]
-        elif first != "" and not first.replace(".", "").isdigit():
-            cat_name, vals = first, r[1:]
-        else:
-            cat_name, vals = second, r[2:]
-        if not cat_name or cat_name in ["유형", "클레임 건수"] or len(vals) < 3:
+        # 유형 열보다 왼쪽 셀에서 연도 표기를 찾는다 (병합 셀의 첫 칸)
+        for c in r[:type_col]:
+            ym = re.fullmatch(r"(2025|2026)\s*년?", str(c).strip())
+            if ym:
+                current_year = f"{ym.group(1)}년"
+        cat_name = str(r[type_col]).strip()
+        if cat_name.replace(" ", "") == "합계":
+            cat_name = "합계"
+        if not cat_name or cat_name in ["유형", "클레임 건수"] or current_year is None:
+            continue
+        vals = r[type_col + 1:]
+        if len(vals) < 3:
             continue
         d = {
-            "연도": current_year, "유형": cat_name.strip(),
+            "연도": current_year, "유형": cat_name,
             "합계_건수": int(to_float(vals[0])),
             "합계_생산수량": int(to_float(vals[1])),
             "합계_PPM": to_float(vals[2]),
@@ -341,15 +364,29 @@ def load_claim_data():
             else:
                 d[f"{m}_건수"], d[f"{m}_생산수량"], d[f"{m}_PPM"] = 0, 0, 0.0
         cat_list.append(d)
+    return cat_list
 
-    if not cat_list:
-        raise SheetLoadError("클레임 시트에서 데이터 행을 읽지 못했습니다. 시트 구조를 확인하세요.")
-    df_cat = pd.DataFrame(cat_list)
+
+@st.cache_data(ttl=300)
+def load_claim_data():
+    sh = open_sheet("claim")
+    df_cat, used_tab, tried = None, None, []
+    # 모든 탭을 순서대로 검사: '2026년 / 합계' 행이 있는 첫 탭을 사용 (시트1 → 시트2 → ...)
+    for ws in sh.worksheets():
+        rows = ws.get_all_values()
+        cat_list = _parse_claim_rows(rows)
+        if cat_list:
+            df = pd.DataFrame(cat_list)
+            if not df[(df["연도"] == "2026년") & (df["유형"] == "합계")].empty:
+                df_cat, used_tab = df, ws.title
+                break
+        sample = [str(r[0]).strip() + "|" + (str(r[1]).strip() if len(r) > 1 else "") for r in rows[:8] if any(r)]
+        tried.append(f"'{ws.title}'(행 {len(rows)}, 앞부분: {sample[:5]})")
+    if df_cat is None:
+        raise SheetLoadError("클레임 시트의 모든 탭에서 '2026년 / 합계' 행을 찾지 못했습니다. 검사한 탭: " + " / ".join(tried))
+
     row_26 = df_cat[(df_cat["연도"] == "2026년") & (df_cat["유형"] == "합계")]
     row_25 = df_cat[(df_cat["연도"] == "2025년") & (df_cat["유형"] == "합계")]
-    if row_26.empty:
-        raise SheetLoadError("클레임 시트에서 '2026년 / 합계' 행을 찾지 못했습니다.")
-
     target = kpi_setting("claim_target_ppm")
     trend_rows = []
     for m in FISCAL_MONTHS:
@@ -361,7 +398,9 @@ def load_claim_data():
             "2025년_PPM": float(row_25[f"{m}_PPM"].values[0]) if not row_25.empty else 0.0,
             "목표_PPM": target if target is not None else np.nan,
         })
-    return pd.DataFrame(trend_rows), df_cat
+    df_trend = pd.DataFrame(trend_rows)
+    df_trend.attrs["source_tab"] = used_tab
+    return df_trend, df_cat
 
 
 def build_division_claim_df(df_cat, year_str, categories):
