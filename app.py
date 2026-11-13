@@ -180,9 +180,9 @@ st.markdown("""
     header[data-testid="stHeader"] {
         background-color: transparent !important;
     }
-    /* 상단 여백을 1.8rem -> 5.8rem으로 확보하여 상단 툴바와 겹침 차단 */
+    /* 상단 여백을 1.8rem -> 8.8rem으로 확보하여 상단 툴바와 겹침 차단 */
     .block-container {
-        padding-top: 5.8rem !important;
+        padding-top: 8.8rem !important;
         padding-bottom: 2.5rem !important;
         max-width: 97%;
     }
