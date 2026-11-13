@@ -118,7 +118,7 @@ def get_gspread_client():
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=o["client_id"],
                 client_secret=o["client_secret"],
-                scopes=scopes,
+                # scopes를 지정하지 않으면 refresh_token 발급 시 승인된 범위를 그대로 사용 (invalid_scope 방지)
             )
             creds.refresh(Request())
             return gspread.authorize(creds)
