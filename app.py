@@ -1,12 +1,8 @@
 import html
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
 
-
-def now_kst() -> datetime:
-    return datetime.now(ZoneInfo("Asia/Seoul"))
 import gspread
 import numpy as np
 import pandas as pd
@@ -24,6 +20,17 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 # ==============================================================================
+# 한국 표준시(KST, UTC+9) 고정 유틸리티 (외부 패키지 의존성 없음)
+# ==============================================================================
+KST_TZ = timezone(timedelta(hours=9))
+
+
+def now_kst() -> datetime:
+    """Streamlit Cloud(UTC 서버) 환경에서도 항상 한국 표준시(KST) 반환"""
+    return datetime.now(KST_TZ).replace(tzinfo=None)
+
+
+# ==============================================================================
 # 1. 페이지 기본 설정 및 세션 상태 초기화
 # ==============================================================================
 st.set_page_config(
@@ -32,7 +39,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-BUNDLE_KEY = "kpi_bundle_v3"
+BUNDLE_KEY = "kpi_bundle_kst_v1"
 
 if "current_view" not in st.session_state:
     st.session_state.current_view = "main"
@@ -505,7 +512,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# CSS 미적용 환경에서도 상단 툴바와 절대 겹치지 않도록 물리적 보호 여백 배치
 st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
 
 
@@ -876,12 +882,12 @@ def build_division_claim_df(df_category: pd.DataFrame, year_str: str, division_c
     return pd.DataFrame(monthly_rows), sub
 
 
-# [3] 공정일보 공통 날짜 탭 정렬 함수
+# [3] 공정일보 공통 날짜 탭 정렬 함수 (한국 시간 KST 기준)
 def get_sorted_date_worksheets(sh):
     if sh is None:
         return None, None, []
     ws_list = sh.worksheets()
-    today = now_kst().replace(tzinfo=None)
+    today = now_kst()
     yesterday = today - timedelta(days=1)
 
     date_tabs = []
@@ -1889,7 +1895,7 @@ def fetch_raw_material_db_sheet(creds, sheet_urls_map):
 
 
 # ==============================================================================
-# 6. 최초 1회 병렬 로딩 엔진 (st.spinner 제거 -> 자체 여백 내장 카드형 로딩 박스)
+# 6. 최초 1회 병렬 로딩 엔진 (한국 시간 KST 기록 및 날짜 변경 시 자동 갱신)
 # ==============================================================================
 def generate_ax_executive_briefing(summary_context_str: str) -> str:
     api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -1912,6 +1918,7 @@ def generate_ax_executive_briefing(summary_context_str: str) -> str:
 def load_all_sheets_parallel() -> dict:
     creds, auth_err = build_google_credentials()
     sheet_urls_map = dict(st.secrets["sheet_urls"]) if "sheet_urls" in st.secrets else {}
+    cur_kst = now_kst()
 
     if creds is None:
         return {
@@ -1933,8 +1940,8 @@ def load_all_sheets_parallel() -> dict:
             "df_raw_sub": pd.DataFrame(),
             "raw_master_cnt": 0,
             "errors": [auth_err],
-           "loaded_at": now_kst().strftime("%Y. %m. %d %H:%M:%S (KST)"),
-            "loaded_date": now_kst().strftime("%Y-%m-%d")
+            "loaded_at": cur_kst.strftime("%Y. %m. %d %H:%M:%S (KST)"),
+            "loaded_date": cur_kst.strftime("%Y-%m-%d")
         }
 
     with ThreadPoolExecutor(max_workers=8) as ex:
@@ -1967,6 +1974,7 @@ def load_all_sheets_parallel() -> dict:
         if p_er:
             errors.append(p_er)
 
+    done_kst = now_kst()
     return {
         "df_cost": df_cost,
         "cost_targets": cost_targets,
@@ -1992,8 +2000,8 @@ def load_all_sheets_parallel() -> dict:
         "df_raw_sub": df_raw_sub,
         "raw_master_cnt": raw_m_cnt,
         "errors": errors,
-       "loaded_at": now_kst().strftime("%Y. %m. %d %H:%M:%S (KST)"),
-            "loaded_date": now_kst().strftime("%Y-%m-%d")
+        "loaded_at": done_kst.strftime("%Y. %m. %d %H:%M:%S (KST)"),
+        "loaded_date": done_kst.strftime("%Y-%m-%d")
     }
 
 
@@ -2002,10 +2010,13 @@ def trigger_manual_sync():
     st.session_state.pop(BUNDLE_KEY, None)
     st.session_state.pop("kpi_bundle", None)
     st.session_state.pop("kpi_bundle_v2", None)
+    st.session_state.pop("kpi_bundle_v3", None)
     st.session_state.pop("ax_brief_text", None)
 
 
-if BUNDLE_KEY not in st.session_state or st.session_state[BUNDLE_KEY].get("loaded_date") != now_kst().strftime("%Y-%m-%d"):
+today_kst_str = now_kst().strftime("%Y-%m-%d")
+if BUNDLE_KEY not in st.session_state or st.session_state[BUNDLE_KEY].get("loaded_date") != today_kst_str:
+    st.session_state.pop("ax_brief_text", None)
     loading_box = st.empty()
     loading_box.markdown(
         """
@@ -2928,7 +2939,7 @@ else:
             cnt_25_all = len(df_2025)
             cnt_26_all = len(df_2026)
 
-            max_m_26 = int(df_2026["_mo_num"].max()) if not df_2026.empty and df_2026["_mo_num"].max() > 0 else datetime.now().month
+            max_m_26 = int(df_2026["_mo_num"].max()) if not df_2026.empty and df_2026["_mo_num"].max() > 0 else now_kst().month
             active_m_25 = max(int(df_2025[df_2025["_mo_num"] > 0]["_mo_num"].nunique()), 1) if not df_2025.empty else 12
             active_m_26 = max(int(df_2026[df_2026["_mo_num"] > 0]["_mo_num"].nunique()), 1) if not df_2026.empty else max_m_26
 
