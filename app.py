@@ -556,16 +556,20 @@ def fetch_claim_data(client, sheet_urls):
         row_cur = df_category[(df_category["연도"] == yr_cur) & (df_category["유형"] == "합계")]
         row_prev = df_category[(df_category["연도"] == yr_prev) & (df_category["유형"] == "합계")] if yr_prev else pd.DataFrame()
 
-        trend_rows = []
+       trend_rows = []
         for m in FISCAL_MONTHS:
             c26 = int(row_cur[f"{m}_건수"].values[0]) if not row_cur.empty else 0
-            prd26 = int(row_cur[f"{m}_생산수량"].values[0]) if not row_cur.empty else 0
             p26 = float(row_cur[f"{m}_PPM"].values[0]) if not row_cur.empty else 0.0
             c25 = int(row_prev[f"{m}_건수"].values[0]) if not row_prev.empty else 0
             p25 = float(row_prev[f"{m}_PPM"].values[0]) if not row_prev.empty else 0.0
             trend_rows.append({
                 "월": m,
                 "2026년_건수": c26,
-                "2026년_생산수량": prd26,
                 "2026년_PPM": p26,
-                "2025년_건수": c25
+                "2025년_건수": c25,
+                "2025년_PPM": p25,
+                "목표_PPM": 1.12
+            })
+        return pd.DataFrame(trend_rows), df_category, None
+    except Exception as e:
+        return pd.DataFrame(), pd.DataFrame(), str(e)
