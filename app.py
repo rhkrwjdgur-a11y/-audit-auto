@@ -544,7 +544,6 @@ def load_process_all_data():
             soy_tab_name = ws_soy.title
             rows_s = ws_soy.get_all_values()
             if len(rows_s) >= 15:
-                # 상단 5일 / 7일 배양 날짜 및 품목 추출
                 header_text_5 = " ".join([str(c) for c in rows_s[1][:15] if str(c).strip() != ""])
                 header_text_7 = " ".join([str(c) for c in rows_s[2][:15] if str(c).strip() != ""])
                 prod_item = " ".join([str(c) for c in rows_s[5][:13] if str(c).strip() not in ["", "품목"]])
@@ -553,7 +552,6 @@ def load_process_all_data():
                 prod_dt = " ".join([str(c) for c in rows_s[7][1:6] if str(c).strip() != ""])
                 insp_dt = " ".join([str(c) for c in rows_s[8][1:6] if str(c).strip() != ""])
 
-                # 오염수량 및 판정 행 (보통 38~40행 부근)
                 contam_val = "0 개"
                 judge_val = "적합"
                 for r_idx in range(min(35, len(rows_s)), len(rows_s)):
@@ -579,7 +577,6 @@ def load_process_all_data():
                     "판정결과": judge_val
                 }])
 
-                # 시간대별(08: ~ 07:) 모니터링 추출 (13행~36행)
                 hourly_rows = []
                 for r in rows_s[13:37]:
                     if len(r) >= 13 and ":" in str(r[0]):
@@ -603,7 +600,7 @@ def load_process_all_data():
         ])
 
     # ------------------------------------------------------------------
-    # B. [상온] 상온제품 공정 관리 일보 파싱 (금일 호기별 생산 제품/확인시간/소비기한 + 우측 특이사항)
+    # B. [상온] 상온제품 공정 관리 일보 파싱
     # ------------------------------------------------------------------
     sh_rt = open_sheet_Safely(client, "process_rt")
     rt_tab_name = "상온제품 공정관리일보"
@@ -617,13 +614,11 @@ def load_process_all_data():
             rt_tab_name = ws_rt.title
             rows_rt = ws_rt.get_all_values()
             if len(rows_rt) >= 4:
-                # 생산일 추출 (2행 B열 등)
                 for c in rows_rt[1][:18]:
                     if "생 산 일" in str(c) or "202" in str(c):
                         rt_prod_date = str(c).replace("생 산 일 :", "").strip()
                         break
 
-                # 좌측(A~Z열) 호기별(A~F호기) 금일 생산 제품명, 소비기한, 확인시간 파싱
                 current_line = ""
                 for r in rows_rt[3:45]:
                     r_pad = r + [""] * (27 - len(r))
@@ -648,7 +643,6 @@ def load_process_all_data():
                             "시작/확인시간(2)": time_2 if time_2 else "-"
                         })
 
-                # 우측(AB~AQ열) 전달(특이)사항 및 소비기한 조치 이력 파싱 (최신순 정렬)
                 for r in rows_rt[4:]:
                     if len(r) >= 29:
                         dt_str = str(r[27]).strip()
@@ -707,7 +701,6 @@ def load_process_all_data():
                     w_date = m_dt.group(0)
                 break
 
-        # 시트 내 '제 품 명' 행 블록을 찾아 각 열(제품)별 확인시간, Tank, 소비기한, 5대 적합여부 추출
         for r_idx, r in enumerate(rows):
             first_cell = str(r[0]).replace(" ", "").strip() if len(r) > 0 else ""
             if "제품명" in first_cell:
@@ -715,7 +708,6 @@ def load_process_all_data():
                     p_name = str(r[col_i]).replace("\n", " ").strip()
                     if not p_name or p_name in ["제 품 명", "제품명"]:
                         continue
-                    # 아래쪽 행들에서 확인시간, 소비기한, 표시사항, 상부접착, 하부접착, 용량, 관능 값 탐색
                     chk_time, exp_val, label_ok, top_ok, bot_ok, vol_ok, sens_ok = "-", "-", "적합", "적합", "적합", "적합", "적합"
                     for sub_r in rows[r_idx+1 : min(r_idx+16, len(rows))]:
                         row_title = str(sub_r[0]).replace(" ", "").strip() if len(sub_r) > 0 else ""
@@ -735,7 +727,6 @@ def load_process_all_data():
                         elif "관능" in row_title and cell_val:
                             sens_ok = cell_val
 
-                    # 소비기한이 '00.00'이 아닌 실제 생산/가동 제품인지 판별
                     is_active = "🟢 금일가동" if (exp_val not in ["-", "00.00", ""] or chk_time != "-") else "⚪ 대기"
                     parsed_products.append({
                         "라인구분": line_label,
@@ -839,7 +830,7 @@ def load_label_status_data():
         {"*ID": "15516", "*docNo": "496", "상태": "개시/준비", "제목": "연세 산양유 초유 단백질 마그네슘 상세페이지", "요청부서": "마케팅3팀", "대분류(마케팅 카테고리)": "생활건강", "보관방법": "실온", "생산처": "외주가공", "검토 포장재 유형": "기타", "등록일": "2026-11-12", "최종수정자": "허정수 대리"},
         {"*ID": "15502", "*docNo": "495", "상태": "식품안전팀 검토중", "제목": "[이롬마케팅팀] 서리태 99.9 190슬리브 표기검수(테트라미드)", "요청부서": "이롬", "대분류(마케팅 카테고리)": "두 유", "보관방법": "실온", "생산처": "아산공장", "검토 포장재 유형": "멸균팩", "등록일": "2026-11-11", "최종수정자": "곽정혁 주임"},
         {"*ID": "15428", "*docNo": "494", "상태": "식품안전팀 검토중", "제목": "[마케팅1팀] 홈플러스 익스프레스 NPB 전용목장 1A우유 2종(일반우유/저지방)", "요청부서": "마케팅1팀", "대분류(마케팅 카테고리)": "우 유", "보관방법": "냉 장", "생산처": "아산공장", "검토 포장재 유형": "카톤팩", "등록일": "2026-11-10", "최종수정자": "곽정혁 주임"},
-        {"*ID": "15342", "*docNo": "493", "상태": "마케팅 /BtoB 최종확인 중", "제목": "[이롬] 유기농 레몬즙 50입_이탈리아산 표기검수 요청의건", "요청부서": "이롬", "대분류(마케팅 카테고리)": "음 료", "보관방법": "실온", "생산처": "아산공장", "검토 포장재 유형": "카톤팩", "등록일": "2026-11-08", "최종수정자": "곽정혁 주임"},
+        {"*ID": "15342", "*docNo": "493", "상태": "마케팅 /BtoB 최종확인 중", "제목": "[이롬] 유기농 레몬즙 50입_이탈리아산 표기검수 요청의건", "요청부서": "이롬", "la_cat": "음 료", "보관방법": "실온", "생산처": "아산공장", "검토 포장재 유형": "카톤팩", "등록일": "2026-11-08", "최종수정자": "곽정혁 주임"},
         {"*ID": "15168", "*docNo": "492", "상태": "식품안전팀 검토중", "제목": "식물성 멜라토닌 함유 연세 멜라구미 표시문안 검토", "요청부서": "마케팅3팀", "대분류(마케팅 카테고리)": "생활건강", "보관방법": "실온", "생산처": "외주가공", "검토 포장재 유형": "번들포장지", "등록일": "2026-11-06", "최종수정자": "김재호 주임"},
         {"*ID": "15138", "*docNo": "491", "상태": "연구소 최종확인 중", "제목": "[이롬마케팅팀] 고단백두유 검은콩 슬리브190 표기검수(테트라팩전환)", "요청부서": "이롬", "대분류(마케팅 카테고리)": "두 유", "보관방법": "실온", "생산처": "아산공장", "검토 포장재 유형": "멸균팩", "등록일": "2026-11-05", "최종수정자": "이롬(공용)"},
         {"*ID": "15137", "*docNo": "490", "상태": "마케팅 /BtoB 최종확인 중", "제목": "[이롬마케팅팀] 유기농 CCA주스(에콜린) 24입 케이스 표기검수 요청", "요청부서": "이롬", "대분류(마케팅 카테고리)": "음 료", "보관방법": "실온", "생산처": "아산공장", "검토 포장재 유형": "카톤팩", "등록일": "2026-11-05", "최종수정자": "곽정혁 주임"},
@@ -971,7 +962,7 @@ cost_actual_man = df_cost["부문_실적(만원)"].sum()
 cost_actual_uk = round(cost_actual_man / 10000, 2)
 cost_rate = round((cost_actual_uk / cost_target_uk) * 100, 1)
 cost_trend_vals, cost_slope, cost_months_cnt = calc_linear_trend_and_forecast(df_cost["부문_실적(만원)"].tolist())
-cost_ projected_man = cost_actual_man + sum(cost_trend_vals[cost_months_cnt:]) if cost_months_cnt < 12 else cost_actual_man
+cost_projected_man = cost_actual_man + sum(cost_trend_vals[cost_months_cnt:]) if cost_months_cnt < 12 else cost_actual_man
 cost_projected_uk = round(cost_projected_man / 10000, 2)
 
 if cost_actual_uk >= cost_target_uk or cost_projected_uk >= cost_target_uk:
@@ -1120,7 +1111,7 @@ if st.session_state.current_view == "main":
             <div class="kpi-body">
                 {get_signal_dot_html(sig_process)}
                 <div><span class="kpi-bullet">●</span><b>금일 배양개봉(5·7일) : 오염 {soy_contam} (적합)</b></div>
-                <div><span class="kpi-bullet">●</span><b>상온 가동 : {len( proc_data['df_rt_lines'] )}개 호기 / 유제품 : {active_milk_cnt+active_ferm_cnt}품목</b></div>
+                <div><span class="kpi-bullet">●</span><b>상온 가동 : {len(proc_data['df_rt_lines'])}개 호기 / 유제품 : {active_milk_cnt+active_ferm_cnt}품목</b></div>
                 <div class="ai-line">✅ {ai_proc_msg}</div>
             </div>
             <div class="unit-label">(단위 : 건/품목)</div>
@@ -1252,10 +1243,10 @@ else:
         st.dataframe(df_cost, use_container_width=True, hide_index=True)
 
     # --------------------------------------------------------------------------
-    # [세부 2] 클레임 발생률 (1. 연간추이 / 2. 부문별(유제품vs상온) 월단위 분석 / 3. 전체 유형별 상세)
+    # [세부 2] 클레임 발생률 (1. 부문별(유제품vs상온) 월단위 분석 / 2. 전사 추이 / 3. 전체 유형별 상세)
     # --------------------------------------------------------------------------
     elif view == "claim":
-        st.markdown("<div class='main-title'>2. 클레임 발생률 - 연간 추이 / 부문별(유제품·상온) 월단위 분석 / 유형별 상세</div>", unsafe_allow_html=True)
+        st.markdown("<div class='main-title'>2. 클레임 발생률 - 부문별(유제품·상온) 월단위 분석 / 연간 추이 / 유형별 상세</div>", unsafe_allow_html=True)
 
         tab_c1, tab_c2, tab_c3 = st.tabs([
             "🏭 부문별 월단위 분석 (유제품생산부문 vs 상온제품부문)",
@@ -1293,7 +1284,6 @@ else:
                 div_title = f"{div_year} 유제품생산부문 vs 상온제품부문 월단위 비교"
 
             if target_df_m is not None:
-                # 부문 요약 KPI 카드
                 tot_c = target_df_m["합산_건수"].sum()
                 tot_p = target_df_m["합산_생산수량"].sum()
                 tot_ppm = round((tot_c / tot_p) * 1_000_000, 2) if tot_p > 0 else 0.0
@@ -1305,7 +1295,6 @@ else:
                 mc3.metric(f"{div_year} 부문 통합 PPM", f"{tot_ppm} ppm")
                 mc4.metric("AX 부문 PPM 월 추세 기울기", f"{d_slope:+.2f} ppm/월", "상승 주의" if d_slope > 0.03 else "안정 추세")
 
-                # 상단 그래프 1: 부문 소속 유형별 월단위 클레임 건수(누적막대) + 부문 통합 PPM(꺾은선) & 추세선
                 fig_div = make_subplots(specs=[[{"secondary_y": True}]])
                 palette = ["#2E75B6", "#5B9BD5", "#ED7D31", "#F4B183"]
                 for idx, cat in enumerate(target_cats):
@@ -1326,7 +1315,6 @@ else:
                 fig_div.update_yaxes(title_text="클레임 발생률 (PPM)", secondary_y=True)
                 st.plotly_chart(fig_div, use_container_width=True)
 
-                # 상단 그래프 2: 소속 유형별 개별 월단위 PPM 비교 차트
                 fig_sub_ppm = go.Figure()
                 for idx, cat in enumerate(target_cats):
                     fig_sub_ppm.add_trace(go.Scatter(
@@ -1343,7 +1331,6 @@ else:
                 st.dataframe(target_df_raw, use_container_width=True, hide_index=True)
 
             else:
-                # 양 부문 통합 비교 뷰
                 fig_cmp = make_subplots(specs=[[{"secondary_y": True}]])
                 fig_cmp.add_trace(go.Bar(x=df_dairy_m["월"], y=df_dairy_m["합산_건수"], name="유제품생산부문 건수", marker_color="#2E75B6", text=df_dairy_m["합산_건수"], textposition="auto"), secondary_y=False)
                 fig_cmp.add_trace(go.Bar(x=df_rt_m["월"], y=df_rt_m["합산_건수"], name="상온제품부문 건수", marker_color="#ED7D31", text=df_rt_m["합산_건수"], textposition="auto"), secondary_y=False)
