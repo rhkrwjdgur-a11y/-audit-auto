@@ -2,7 +2,11 @@ import html
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
+
+def now_kst() -> datetime:
+    return datetime.now(ZoneInfo("Asia/Seoul"))
 import gspread
 import numpy as np
 import pandas as pd
@@ -877,7 +881,7 @@ def get_sorted_date_worksheets(sh):
     if sh is None:
         return None, None, []
     ws_list = sh.worksheets()
-    today = datetime.now()
+    today = now_kst().replace(tzinfo=None)
     yesterday = today - timedelta(days=1)
 
     date_tabs = []
@@ -1593,7 +1597,8 @@ def fetch_process_soy_sheet(creds, sheet_urls_map):
         return "-", {}, pd.DataFrame(), pd.DataFrame(), f"[두유배양일보] {err_soy}"
     try:
         ws_soy_t, ws_soy_y, soy_date_ws_list = get_sorted_date_worksheets(sh_soy)
-        today_mmdd = datetime.now().strftime("%m. %d").replace("0", "").strip()
+        kst_today = now_kst()
+        today_mmdd = f"{kst_today.month}. {kst_today.day}"
 
         default_soy_ws = ws_soy_y if ws_soy_y is not None else ws_soy_t
         soy_tabs_parsed = {}
@@ -1928,7 +1933,8 @@ def load_all_sheets_parallel() -> dict:
             "df_raw_sub": pd.DataFrame(),
             "raw_master_cnt": 0,
             "errors": [auth_err],
-            "loaded_at": datetime.now().strftime("%Y. %m. %d %H:%M:%S")
+           "loaded_at": now_kst().strftime("%Y. %m. %d %H:%M:%S (KST)"),
+            "loaded_date": now_kst().strftime("%Y-%m-%d")
         }
 
     with ThreadPoolExecutor(max_workers=8) as ex:
@@ -1986,7 +1992,8 @@ def load_all_sheets_parallel() -> dict:
         "df_raw_sub": df_raw_sub,
         "raw_master_cnt": raw_m_cnt,
         "errors": errors,
-        "loaded_at": datetime.now().strftime("%Y. %m. %d %H:%M:%S")
+       "loaded_at": now_kst().strftime("%Y. %m. %d %H:%M:%S (KST)"),
+            "loaded_date": now_kst().strftime("%Y-%m-%d")
     }
 
 
