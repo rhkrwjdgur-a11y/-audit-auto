@@ -1,4 +1,5 @@
 import html
+import time
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -577,7 +578,24 @@ def open_sheet_threadsafe(creds, sheet_urls_map: dict, key_or_title: str):
     return None, " / ".join(errors)
 
 
+def api_call_with_retry(func, *args, **kwargs):
+    """Google Sheets 429 할당량 초과 발생 시 자동 대기 후 최대 4회 재시도"""
+    for attempt in range(4):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                time.sleep(2.5 * (attempt + 1))
+                continue
+            raise
+    return func(*args, **kwargs)
+
+
 def get_values_unformatted(ws):
+    try:
+        return api_call_with_retry(ws.get_all_values, value_render_option="UNFORMATTED_VALUE")
+    except Exception:
+        return api_call_with_retry(ws.get_all_values)
     try:
         return ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
     except Exception:
@@ -1915,6 +1933,7 @@ def generate_ax_executive_briefing(summary_context_str: str) -> str:
     return summary_context_str
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def load_all_sheets_parallel() -> dict:
     creds, auth_err = build_google_credentials()
     sheet_urls_map = dict(st.secrets["sheet_urls"]) if "sheet_urls" in st.secrets else {}
@@ -1944,7 +1963,7 @@ def load_all_sheets_parallel() -> dict:
             "loaded_date": cur_kst.strftime("%Y-%m-%d")
         }
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         f_cost = ex.submit(fetch_cost_sheet, creds, sheet_urls_map)
         f_claim = ex.submit(fetch_claim_sheet, creds, sheet_urls_map)
         f_rt = ex.submit(fetch_process_rt_sheet, creds, sheet_urls_map)
