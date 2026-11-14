@@ -1,5 +1,5 @@
 # ==============================================================================
-# [PART 1 / 3] 기본 설정 · KST 시간 · CSS 테마 · Google 인증 및 공통 유틸리티
+# [PART 1 / 4] 기본 설정 · KST 시간 · CSS · 로트 역추적 매칭 유틸리티 · 원가/클레임 파서
 # ==============================================================================
 import html
 import re
@@ -41,7 +41,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-BUNDLE_KEY = "kpi_bundle_kst_v2"
+BUNDLE_KEY = "kpi_bundle_kst_v3"
 
 if "current_view" not in st.session_state:
     st.session_state.current_view = "main"
@@ -189,8 +189,17 @@ SHEET_NAMES = {
     "process_milk": "[우유] 유제품 포장 공정관리 일보"
 }
 
+# 숨김 이력 DB 탭 이름 상수 (Apps Script와 100% 일치)
+HIST_TABS = {
+    "dairy_prod": "_이력DB_유제품포장",
+    "dairy_ccp": "_이력DB_유제품공정CCP",
+    "rt_prod": "_이력DB_상온생산",
+    "rt_ccp": "_이력DB_상온CCP",
+    "soy_inc": "_이력DB_두유배양"
+}
+
 # ==============================================================================
-# 2. 연세유업 브랜드 컬러 CSS (상단 잘림 차단 + 온도계 진행바 스타일 포함)
+# 2. 연세유업 브랜드 컬러 CSS (상단 잘림 차단 + 온도계 + 로트 역추적 카드 스타일)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -348,9 +357,8 @@ st.markdown("""
     }
     .signal-gray {
         background-color: #94A3B8;
-        border: 2px solid #475569;
+        border: 2px solid #475559;
     }
-    /* 3번 카드 전용: 체크리스트 + 특이사항 전광판 */
     .proc-hybrid-wrap {
         height: 226px;
         display: flex;
@@ -405,7 +413,6 @@ st.markdown("""
         line-height: 1.5;
         color: #1E293B;
     }
-    /* 5번 심사점수 전용: 일정 배너 + 온도계 게이지 바 */
     .audit-panel-wrap {
         background-color: #F8FAFC;
         border: 1px solid #E2E8F0;
@@ -478,7 +485,6 @@ st.markdown("""
         border-top: 1px dashed #CBD5E1;
         padding-top: 4px;
     }
-    /* 카드 내 스크롤 목록 박스 */
     .card-scroll-box {
         background-color: #F8FAFC;
         border: 1px solid #E2E8F0;
@@ -509,6 +515,17 @@ st.markdown("""
         line-height: 1.68;
         color: #1E293B;
         box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    }
+    .trace-hero-box {
+        background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%);
+        border: 1.5px solid #BFDBFE;
+        border-left: 6px solid #00205B;
+        padding: 16px 20px;
+        border-radius: 10px;
+        margin-bottom: 16px;
+        color: #1E293B;
+        font-size: 14px;
+        line-height: 1.65;
     }
     .issue-card-ok {
         background-color: #F0FDF4;
@@ -589,12 +606,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 상단 고정 툴바 가림 원천 차단용 물리적 여백
 st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. Google 인증 · 429 할당량 초과 자동 재시도 · 공통 헬퍼
+# 3. Google 인증 · 429 자동 재시도 · 로트 역추적 정규화 유틸리티
 # ==============================================================================
 def api_call_with_retry(func, *args, **kwargs):
     """Google Sheets 분당 호출 한도(429) 발생 시 자동 대기 후 최대 4회 재시도"""
@@ -680,6 +696,26 @@ def get_values_formatted(ws):
     return api_call_with_retry(ws.get_all_values)
 
 
+def safe_ws_update(ws, payload: list):
+    try:
+        api_call_with_retry(ws.update, values=payload, range_name="A1", value_input_option="USER_ENTERED")
+    except TypeError:
+        api_call_with_retry(ws.update, "A1", payload, value_input_option="USER_ENTERED")
+
+
+def rows_to_df(rows: list) -> pd.DataFrame:
+    if not rows or len(rows) < 2:
+        return pd.DataFrame()
+    hdr = [str(h).strip() for h in rows[0]]
+    data = []
+    for r in rows[1:]:
+        if not any(str(x).strip() != "" for x in r):
+            continue
+        r_pad = [str(x).strip() for x in r] + [""] * max(0, len(hdr) - len(r))
+        data.append(dict(zip(hdr, r_pad[:len(hdr)])))
+    return pd.DataFrame(data)
+
+
 def to_float(val, default=0.0):
     if val is None or pd.isna(val):
         return default
@@ -704,6 +740,130 @@ def normalize_comp_name(name, core_only=False):
         s = s.replace(token, "")
     s = s.replace("롯데웰푸드", "롯데푸드")
     return s.strip()
+
+
+def clean_product_for_match(name: str) -> str:
+    """
+    '제품명 식품안전나라' A열 표준 제품명과 일보 내 제품명(용량 표기·5자리 품목코드 등 포함) 간
+    일치율을 극대화하기 위한 정규화 함수
+    """
+    if not name:
+        return ""
+    s = str(name).strip()
+    # 용량 표기 제거 (예: (900㎖), 190mL, 1000ml 등)
+    s = re.sub(r"\(\s*\d+(?:\.\d+)?\s*(?:mL|ml|ML|㎖|L|g|kg)\s*\)", "", s)
+    s = re.sub(r"(?<!\d)\d{2,4}\s*(?:mL|ml|ML|㎖)(?!\w)", "", s)
+    # 말미 5자리 내부 품목코드 제거 (예: 12092, 11904 등 — 콜라겐 10000은 유지)
+    s = re.sub(r"\s+1[0127]\d{3}\b", "", s)
+    # 공백 및 특수기호 제거 후 소문자 통일
+    s = re.sub(r"[\s\(\)\[\]\{\}\-_·,/&\+!]+", "", s).lower()
+    return s
+
+
+def is_product_match(record_prod: str, selected_prod: str, kw_text: str = "") -> bool:
+    """선택된 표준 제품명 및 추가 검색어와 DB 행의 제품명 일치 여부 판별"""
+    rec_raw = str(record_prod or "").strip()
+    if not rec_raw or rec_raw == "-":
+        return False
+
+    rec_parts = [p.strip() for p in rec_raw.split("/") if p.strip()]
+    rec_cleans = [clean_product_for_match(p) for p in rec_parts] + [clean_product_for_match(rec_raw)]
+
+    if selected_prod and selected_prod != "전체 (제품 미선택 · 소비기한으로만 검색)":
+        sel_clean = clean_product_for_match(selected_prod)
+        if not sel_clean:
+            return False
+        matched_sel = False
+        for rc in rec_cleans:
+            if not rc:
+                continue
+            if sel_clean == rc or (len(sel_clean) >= 2 and sel_clean in rc) or (len(rc) >= 3 and rc in sel_clean):
+                matched_sel = True
+                break
+        if not matched_sel:
+            return False
+
+    if kw_text and kw_text.strip():
+        kw_clean = clean_product_for_match(kw_text)
+        kw_raw_low = kw_text.strip().lower()
+        if kw_clean:
+            if not any(kw_clean in rc for rc in rec_cleans if rc) and (kw_raw_low not in rec_raw.lower()):
+                return False
+
+    return True
+
+
+def parse_exp_query_info(exp_input: str) -> dict:
+    """사용자가 입력한 소비기한(2027-05-13, 27.05.13, 05.13, 11/25 등)을 표준 패턴으로 분해"""
+    s = str(exp_input or "").strip()
+    if not s:
+        return {"empty": True}
+
+    m_full = re.search(r"(20\d{2})\D+(\d{1,2})\D+(\d{1,2})", s)
+    if m_full:
+        yr, mm, dd = int(m_full.group(1)), int(m_full.group(2)), int(m_full.group(3))
+        return {
+            "empty": False,
+            "iso_full": f"{yr:04d}-{mm:02d}-{dd:02d}",
+            "mm_dd_dash": f"{mm:02d}-{dd:02d}",
+            "mm_dd_dot": f"{mm:02d}.{dd:02d}",
+            "m_d_dot": f"{mm}.{dd}",
+            "raw": s
+        }
+
+    m_two = re.search(r"^(\d{2})\D+(\d{1,2})\D+(\d{1,2})$", s)
+    if m_two:
+        yr, mm, dd = 2000 + int(m_two.group(1)), int(m_two.group(2)), int(m_two.group(3))
+        return {
+            "empty": False,
+            "iso_full": f"{yr:04d}-{mm:02d}-{dd:02d}",
+            "mm_dd_dash": f"{mm:02d}-{dd:02d}",
+            "mm_dd_dot": f"{mm:02d}.{dd:02d}",
+            "m_d_dot": f"{mm}.{dd}",
+            "raw": s
+        }
+
+    m_short = re.search(r"^(\d{1,2})\D+(\d{1,2})$", s)
+    if m_short:
+        mm, dd = int(m_short.group(1)), int(m_short.group(2))
+        return {
+            "empty": False,
+            "iso_full": "",
+            "mm_dd_dash": f"{mm:02d}-{dd:02d}",
+            "mm_dd_dot": f"{mm:02d}.{dd:02d}",
+            "m_d_dot": f"{mm}.{dd}",
+            "raw": s
+        }
+
+    return {"empty": False, "iso_full": "", "mm_dd_dash": "", "mm_dd_dot": "", "m_d_dot": "", "raw": s}
+
+
+def is_exp_match(raw_exp: str, iso_exp: str, q_info: dict) -> bool:
+    if q_info.get("empty", True):
+        return True
+
+    raw_s = re.sub(r"\s+", "", str(raw_exp or ""))
+    iso_s = re.sub(r"\s+", "", str(iso_exp or ""))
+
+    if q_info.get("iso_full"):
+        if q_info["iso_full"] in iso_s:
+            return True
+        # 원문에 월.일만 적힌 경우(유제품 11.25 등) 연도가 달라도 표준소비기한이 일치하면 매칭
+        yr_2 = q_info["iso_full"][2:4]
+        mm_dd_dot = q_info["mm_dd_dot"]
+        if f"{q_info['iso_full'][:4]}.{mm_dd_dot}" in raw_s or f"{yr_2}.{mm_dd_dot}" in raw_s:
+            return True
+        return False
+
+    if q_info.get("mm_dd_dash"):
+        if iso_s and any(tok.endswith(q_info["mm_dd_dash"]) for tok in iso_s.split(",")):
+            return True
+        if q_info["mm_dd_dot"] in raw_s or q_info["m_d_dot"] in raw_s:
+            return True
+        return False
+
+    q_raw = re.sub(r"\s+", "", q_info.get("raw", ""))
+    return (q_raw in raw_s) or (q_raw in iso_s)
 
 
 def get_signal_dot_html(status_code: str) -> str:
@@ -774,20 +934,11 @@ def render_html_table(columns_spec: list, rows_data: list) -> str:
         <tbody>{''.join(tbody_rows)}</tbody>
     </table>
     """
-# ============================ [PART 1 / 3 끝] ============================
+
+
 # ==============================================================================
-# [PART 2 / 3] 실시간 시트 파서 · 배양(탭날짜·검사자 판별) · 심사점수/일정 DB 연동
+# 5. [1] 원가절감 현황 & [2] 클레임 건수 시트 파서
 # ==============================================================================
-
-def safe_ws_update(ws, payload: list):
-    """gspread 구버전·신버전 호환 시트 쓰기 헬퍼"""
-    try:
-        api_call_with_retry(ws.update, values=payload, range_name="A1", value_input_option="USER_ENTERED")
-    except TypeError:
-        api_call_with_retry(ws.update, "A1", payload, value_input_option="USER_ENTERED")
-
-
-# [1] 원가절감 현황
 def fetch_cost_sheet(creds, sheet_urls_map):
     sh, err = open_sheet_threadsafe(creds, sheet_urls_map, "cost")
     default_targets = {"부문": 1.54, "식품안전팀": 1.0, "품질관리팀": 0.54}
@@ -853,7 +1004,6 @@ def fetch_cost_sheet(creds, sheet_urls_map):
         return pd.DataFrame(), default_targets, str(e)
 
 
-# [2] 클레임 건수
 def fetch_claim_sheet(creds, sheet_urls_map):
     sh, err = open_sheet_threadsafe(creds, sheet_urls_map, "claim")
     if sh is None:
@@ -983,7 +1133,10 @@ def build_division_claim_df(df_category: pd.DataFrame, year_str: str, division_c
             row_item[f"{cat}_PPM"] = float(cat_row[f"{m}_PPM"].values[0]) if not cat_row.empty else 0.0
         monthly_rows.append(row_item)
     return pd.DataFrame(monthly_rows), sub
-
+# ============================ [PART 1 / 4 끝] ============================
+# ==============================================================================
+# [PART 2 / 4] 공정 실시간 파서(원본 유지) + 숨김 이력 DB & 식품안전나라 A열 로더 + 시트 연동
+# ==============================================================================
 
 # [3] 공정일보 공통 하단 날짜 탭 정렬 함수 (한국 시간 KST 기준)
 def get_sorted_date_worksheets(sh):
@@ -996,7 +1149,7 @@ def get_sorted_date_worksheets(sh):
     date_tabs = []
     for w in ws_list:
         t = w.title.strip()
-        if any(ex in t for ex in ["양식", "복사", "백업", "사본", "대기"]):
+        if t.startswith("_이력DB_") or any(ex in t for ex in ["양식", "복사", "백업", "사본", "대기", "식품안전나라"]):
             continue
         m = re.match(r"^(\d{1,2})[/\.\-](\d{1,2})$", t)
         if m:
@@ -1008,7 +1161,6 @@ def get_sorted_date_worksheets(sh):
                 dt_obj = datetime(today.year, 1, 1)
             date_tabs.append((dt_obj, w))
 
-    # 당일 이하 탭을 우선 최신순으로 두고, 미리 생성된 미래 날짜 탭은 뒤로 배치
     past_or_today = sorted([x for x in date_tabs if x[0].date() <= today.date()], key=lambda x: x[0], reverse=True)
     future_tabs = sorted([x for x in date_tabs if x[0].date() > today.date()], key=lambda x: x[0], reverse=True)
     ordered_ws = [w for _, w in (past_or_today + future_tabs)]
@@ -1026,7 +1178,8 @@ def get_sorted_date_worksheets(sh):
         ws_yest = ordered_ws[idx_t + 1] if idx_t + 1 < len(ordered_ws) else ordered_ws[0]
 
     if ws_today is None and ws_list:
-        ws_today = ws_list[0]
+        non_db_ws = [w for w in ws_list if not w.title.strip().startswith("_이력DB_")]
+        ws_today = non_db_ws[0] if non_db_ws else ws_list[0]
 
     return ws_today, ws_yest, ordered_ws
 
@@ -1110,7 +1263,7 @@ def is_same_tab_date_memo(memo_dt_str: str, tab_title: str) -> bool:
     return False
 
 
-# [3-A] 상온제품 공정 관리 일보 파서
+# [3-A] 상온제품 공정 관리 일보 실시간 파서 (기존 화면 구조 100% 보존)
 def parse_rt_process_worksheet(ws):
     if ws is None:
         return None
@@ -1422,7 +1575,7 @@ def parse_rt_process_worksheet(ws):
     }
 
 
-# [3-B] 유제품 포장 공정관리 일보 파서
+# [3-B] 유제품 포장 공정관리 일보 실시간 파서 (기존 화면 구조 100% 보존)
 def parse_dairy_pack_worksheet(ws, line_label: str):
     if ws is None:
         return pd.DataFrame(), "-"
@@ -1501,7 +1654,7 @@ def parse_dairy_pack_worksheet(ws, line_label: str):
     return pd.DataFrame(parsed_products), w_date
 
 
-# [3-C] 두유 배양검사 일보 파서 (하단 탭 날짜 단독 기준 + 검사자 기입 유무로 검사전/검사완료 판별)
+# [3-C] 두유 배양검사 일보 실시간 파서 (기존 화면 구조 100% 보존 + 탭 날짜 기준 생산일 역산)
 SOY_STOP_LABELS = {
     "배양검사", "배양온도", "용량/포장기", "포장기", "작성자", "검사자",
     "품목", "생산일", "소비기한", "검사일", "생산시작", "생산종료",
@@ -1536,6 +1689,37 @@ def extract_clean_right_values(sr: list, start_idx: int) -> list:
     return out
 
 
+def resolve_soy_realtime_dates(tab_title: str, raw_prod_dt: str, raw_insp_dt: str, inc_days: str):
+    """실시간 시트 조회 시에도 TODAY() 수식 밀림을 막고 하단 탭 날짜 기준으로 검사일·생산일 복원"""
+    today_d = now_kst().date()
+    m_tab = re.match(r"^(\d{1,2})[/\.\-](\d{1,2})$", str(tab_title).strip())
+    if not m_tab:
+        return raw_prod_dt or "-", raw_insp_dt or "-"
+
+    mm, dd = int(m_tab.group(1)), int(m_tab.group(2))
+    yr = today_d.year if mm <= today_d.month + 1 else today_d.year - 1
+    try:
+        tab_d = date(yr, mm, dd)
+    except ValueError:
+        return raw_prod_dt or "-", raw_insp_dt or "-"
+
+    c_insp = pd.to_datetime(re.sub(r"\s+", "", str(raw_insp_dt)).rstrip("."), errors="coerce")
+    c_prod = pd.to_datetime(re.sub(r"\s+", "", str(raw_prod_dt)).rstrip("."), errors="coerce")
+
+    offset = 7 if "7" in str(inc_days) else 5
+    if pd.notna(c_insp) and pd.notna(c_prod):
+        diff = (c_insp.date() - c_prod.date()).days
+        if 1 <= diff <= 20:
+            offset = diff
+
+    if pd.isna(c_prod) or (pd.notna(c_insp) and c_insp.date() == today_d and tab_d != today_d):
+        true_prod = (tab_d - timedelta(days=offset)).strftime("%Y-%m-%d")
+        return true_prod, tab_d.strftime("%Y-%m-%d")
+
+    prod_str = c_prod.strftime("%Y-%m-%d") if pd.notna(c_prod) else (raw_prod_dt or "-")
+    return prod_str, tab_d.strftime("%Y-%m-%d")
+
+
 def parse_soy_incubation_worksheet(ws):
     if ws is None:
         return pd.DataFrame(), pd.DataFrame()
@@ -1543,6 +1727,7 @@ def parse_soy_incubation_worksheet(ws):
     if not rows:
         return pd.DataFrame(), pd.DataFrame()
 
+    tab_title = ws.title.strip()
     anchors = []
     for r_i, r in enumerate(rows):
         for c_i, cell in enumerate(r):
@@ -1651,7 +1836,6 @@ def parse_soy_incubation_worksheet(ws):
         if not has_valid_record:
             continue
 
-        # 검사자 성명 기입 유무로 '검사전' vs '검사완료' 판별
         clean_inspector = re.sub(r"[\s\-_]", "", str(inspector_nm))
         is_inspected = bool(clean_inspector) and clean_inspector not in ["미입력", "미검사", "검사전", "대기", "없음"]
 
@@ -1667,15 +1851,17 @@ def parse_soy_incubation_worksheet(ws):
             else:
                 status_badge = "🟢 검사완료"
 
+        true_prod_dt, true_insp_dt = resolve_soy_realtime_dates(tab_title, prod_dt, insp_dt, inc_days)
+
         blocks_parsed.append({
-            "시트탭": ws.title.strip(),
+            "시트탭": tab_title,
             "포장기": machine_ho,
             "배양구분": f"{inc_days} ({inc_temp})".strip(" ()"),
             "용량(mL)": vol_ml or "-",
             "품목명": " / ".join(item_names) if item_names else "-",
-            "생산일": prod_dt or "-",
+            "생산일": true_prod_dt,
             "소비기한": " / ".join(exp_dates) if exp_dates else "-",
-            "검사일(개봉일)": insp_dt or "-",
+            "검사일(개봉일)": true_insp_dt,
             "생산 시작~종료": f"{t_start} ~ {t_end}" if (t_start or t_end) else "-",
             "실가동시간": calc_run_duration(t_start, t_end),
             "총 검사수량": total_smp or "0",
@@ -1691,47 +1877,103 @@ def parse_soy_incubation_worksheet(ws):
     return pd.DataFrame(blocks_parsed), pd.DataFrame(hourly_all)
 
 
+# [3-D] 3개 공정 시트 로더 (실시간 탭 + 숨김 _이력DB_* 탭 + '제품명 식품안전나라' A열 마스터 동시 로드)
 def fetch_process_rt_sheet(creds, sheet_urls_map):
     sh_rt, err_rt = open_sheet_threadsafe(creds, sheet_urls_map, "process_rt")
     if sh_rt is None:
-        return None, None, f"[상온공정일보] {err_rt}"
+        return None, None, pd.DataFrame(), pd.DataFrame(), [], f"[상온공정일보] {err_rt}"
     try:
+        ws_all = api_call_with_retry(sh_rt.worksheets)
         ws_rt_today, ws_rt_yest, _ = get_sorted_date_worksheets(sh_rt)
-        return parse_rt_process_worksheet(ws_rt_today), parse_rt_process_worksheet(ws_rt_yest), None
+        rt_today_parsed = parse_rt_process_worksheet(ws_rt_today)
+        rt_yest_parsed = parse_rt_process_worksheet(ws_rt_yest)
+
+        # 숨김 DB 탭 로드 (_이력DB_상온생산, _이력DB_상온CCP)
+        ws_hist_p = next((w for w in ws_all if w.title.strip() == HIST_TABS["rt_prod"]), None)
+        ws_hist_c = next((w for w in ws_all if w.title.strip() == HIST_TABS["rt_ccp"]), None)
+        df_rt_hist_p = rows_to_df(get_values_formatted(ws_hist_p)) if ws_hist_p is not None else pd.DataFrame()
+        df_rt_hist_c = rows_to_df(get_values_formatted(ws_hist_c)) if ws_hist_c is not None else pd.DataFrame()
+
+        # '제품명 식품안전나라' 탭 A열 제품명 마스터 목록 로드
+        fsk_products = []
+        ws_fsk = next(
+            (w for w in ws_all if re.sub(r"\s+", "", w.title) == "제품명식품안전나라" or "식품안전나라" in w.title),
+            None
+        )
+        if ws_fsk is not None:
+            fsk_rows = get_values_formatted(ws_fsk)
+            skip_hdrs = {"제품명", "품목명", "품목", "제 품 명", "번호", "no", "코드", "품목제조보고"}
+            for r in fsk_rows:
+                if not r:
+                    continue
+                col_a = re.sub(r"\s+", " ", str(r[0])).strip()
+                if not col_a or col_a == "-" or col_a.lower() in skip_hdrs:
+                    continue
+                if re.match(r"^\d+$", col_a):
+                    continue
+                if col_a not in fsk_products:
+                    fsk_products.append(col_a)
+
+        return rt_today_parsed, rt_yest_parsed, df_rt_hist_p, df_rt_hist_c, fsk_products, None
     except Exception as e:
-        return None, None, f"[상온공정일보] {e}"
+        return None, None, pd.DataFrame(), pd.DataFrame(), [], f"[상온공정일보] {e}"
 
 
 def fetch_process_milk_sheet(creds, sheet_urls_map):
     sh_milk, err_milk = open_sheet_threadsafe(creds, sheet_urls_map, "process_milk")
     if sh_milk is None:
-        return pd.DataFrame(), pd.DataFrame(), "-", "-", f"[유제품포장일보] {err_milk}"
+        return pd.DataFrame(), pd.DataFrame(), "-", "-", pd.DataFrame(), pd.DataFrame(), [], f"[유제품포장일보] {err_milk}"
     try:
+        ws_all = api_call_with_retry(sh_milk.worksheets)
         ws_m, ws_f = None, None
-        for w in api_call_with_retry(sh_milk.worksheets):
+        ws_m_tpl, ws_f_tpl = None, None
+
+        for w in ws_all:
             wt = w.title.strip()
-            if "우유" in wt and "발효유" not in wt and ws_m is None:
+            if wt == "우유":
                 ws_m = w
-            elif "발효유" in wt and ws_f is None:
+            elif wt == "발효유":
                 ws_f = w
-        df_m, m_dt = parse_dairy_pack_worksheet(ws_m, "우유")
-        df_f, f_dt = parse_dairy_pack_worksheet(ws_f, "발효유")
-        return df_m, df_f, m_dt, f_dt, None
+            elif "우유" in wt and "복사용" in wt and ws_m_tpl is None:
+                ws_m_tpl = w
+            elif "발효유" in wt and "복사용" in wt and ws_f_tpl is None:
+                ws_f_tpl = w
+
+        df_m, m_dt = parse_dairy_pack_worksheet(ws_m, "우유") if ws_m is not None else (pd.DataFrame(), "-")
+        df_f, f_dt = parse_dairy_pack_worksheet(ws_f, "발효유") if ws_f is not None else (pd.DataFrame(), "-")
+
+        # 숨김 DB 탭 로드 (_이력DB_유제품포장, _이력DB_유제품공정CCP)
+        ws_hist_dp = next((w for w in ws_all if w.title.strip() == HIST_TABS["dairy_prod"]), None)
+        ws_hist_dc = next((w for w in ws_all if w.title.strip() == HIST_TABS["dairy_ccp"]), None)
+        df_dairy_hist_p = rows_to_df(get_values_formatted(ws_hist_dp)) if ws_hist_dp is not None else pd.DataFrame()
+        df_dairy_hist_c = rows_to_df(get_values_formatted(ws_hist_dc)) if ws_hist_dc is not None else pd.DataFrame()
+
+        # 유제품(우유/발효유) 양식 품목명도 역추적 선택 목록에 보강용으로 추출
+        dairy_prod_names = []
+        for tpl_ws, lbl in [(ws_m or ws_m_tpl, "우유"), (ws_f or ws_f_tpl, "발효유")]:
+            if tpl_ws is not None:
+                df_tpl, _ = parse_dairy_pack_worksheet(tpl_ws, lbl)
+                if not df_tpl.empty and "제품명" in df_tpl.columns:
+                    for pn in df_tpl["제품명"].dropna().tolist():
+                        p_clean = str(pn).strip()
+                        if p_clean and p_clean != "-" and p_clean not in dairy_prod_names:
+                            dairy_prod_names.append(p_clean)
+
+        return df_m, df_f, m_dt, f_dt, df_dairy_hist_p, df_dairy_hist_c, dairy_prod_names, None
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), "-", "-", f"[유제품포장일보] {e}"
+        return pd.DataFrame(), pd.DataFrame(), "-", "-", pd.DataFrame(), pd.DataFrame(), [], f"[유제품포장일보] {e}"
 
 
 def fetch_process_soy_sheet(creds, sheet_urls_map):
-    """셀 내부 검사일 수식 대신 무조건 하단 시트 탭에 적힌 날짜 순서 기준으로 최신 작성 탭 선택"""
     sh_soy, err_soy = open_sheet_threadsafe(creds, sheet_urls_map, "process_soy")
     if sh_soy is None:
-        return "-", {}, pd.DataFrame(), pd.DataFrame(), f"[두유배양일보] {err_soy}"
+        return "-", {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), f"[두유배양일보] {err_soy}"
     try:
+        ws_all = api_call_with_retry(sh_soy.worksheets)
         _, _, soy_date_ws_list = get_sorted_date_worksheets(sh_soy)
         soy_tabs_parsed = {}
         default_tab_title = "-"
 
-        # 하단 탭 날짜 최신순으로 상위 5개 탭을 확인하여 데이터가 기록된 가장 최신 탭을 기준탭으로 확정
         for w in soy_date_ws_list[:5]:
             t_title = w.title.strip()
             df_b, df_h = parse_soy_incubation_worksheet(w)
@@ -1746,9 +1988,14 @@ def fetch_process_soy_sheet(creds, sheet_urls_map):
             soy_tabs_parsed[default_tab_title] = parse_soy_incubation_worksheet(first_ws)
 
         df_sb, df_sh = soy_tabs_parsed.get(default_tab_title, (pd.DataFrame(), pd.DataFrame()))
-        return default_tab_title, soy_tabs_parsed, df_sb, df_sh, None
+
+        # 숨김 DB 탭 로드 (_이력DB_두유배양)
+        ws_hist_soy = next((w for w in ws_all if w.title.strip() == HIST_TABS["soy_inc"]), None)
+        df_soy_hist = rows_to_df(get_values_formatted(ws_hist_soy)) if ws_hist_soy is not None else pd.DataFrame()
+
+        return default_tab_title, soy_tabs_parsed, df_sb, df_sh, df_soy_hist, None
     except Exception as e:
-        return "-", {}, pd.DataFrame(), pd.DataFrame(), f"[두유배양일보] {e}"
+        return "-", {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), f"[두유배양일보] {e}"
 
 
 # [4] 협력업체 심사 결과 DB
@@ -1938,7 +2185,7 @@ def fetch_supplier_sheet(creds, sheet_urls_map):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), str(e)
 
 
-# [5] 심사점수 및 일정 관리 DB (일정 + 진행현황 + 수동 KPI 점수 영구 저장 연동)
+# [5] 심사점수 및 일정 관리 DB 연동
 AUDIT_COLS = ["고유ID", "심사일자", "심사명", "진행현황", "점수", "비고", "수정일시"]
 MANUAL_KPI_TAB = "수동KPI_설정"
 MANUAL_KPI_COLS = [
@@ -1949,9 +2196,9 @@ MANUAL_KPI_COLS = [
 
 def fetch_audit_and_manual_db(creds, sheet_urls_map):
     empty_sched = pd.DataFrame(columns=AUDIT_COLS)
-    sh, err = open_sheet_threadsafe(creds, sheet_urls_map, "audit_db")
+    sh, _ = open_sheet_threadsafe(creds, sheet_urls_map, "audit_db")
     if sh is None:
-        return empty_sched, {}, None  # 파일 미공유 시 에러 배너 대신 초기값으로 유연 동작
+        return empty_sched, {}, None
 
     try:
         ws_list = api_call_with_retry(sh.worksheets)
@@ -2104,7 +2351,7 @@ def parse_factual_date(row_dict: dict):
                 pass
         dt_parsed = pd.to_datetime(s, errors="coerce")
         if pd.notna(dt_parsed) and 2018 <= dt_parsed.year <= 2035:
-            return dt_parsed.strftime("%Y-%m-%d"), f"{dt.year}년", f"{dt.month}월", int(dt_parsed.year), int(dt_parsed.month)
+            return dt_parsed.strftime("%Y-%m-%d"), f"{dt_parsed.year}년", f"{dt_parsed.month}월", int(dt_parsed.year), int(dt_parsed.month)
 
     return "원본날짜깨짐(#######)", "날짜미상", "날짜미상", 0, 0
 
@@ -2171,7 +2418,7 @@ def fetch_raw_material_db_sheet(creds, sheet_urls_map):
 
 
 # ==============================================================================
-# 6. 병렬 로딩 엔진 (5분 캐시 + max_workers=3 호출 분산으로 429 에러 원천 차단)
+# 6. 병렬 로딩 엔진 (5분 캐시 + max_workers=3 호출 분산 + 제품명 마스터 통합)
 # ==============================================================================
 def generate_ax_executive_briefing(summary_context_str: str) -> str:
     api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -2197,18 +2444,24 @@ def load_all_sheets_parallel(today_cache_key: str) -> dict:
     sheet_urls_map = dict(st.secrets["sheet_urls"]) if "sheet_urls" in st.secrets else {}
     cur_kst = now_kst()
 
+    empty_proc = {
+        "rt_today": None, "rt_yest": None, "milk_date": "-", "ferm_date": "-",
+        "df_milk_pack": pd.DataFrame(), "df_ferm_pack": pd.DataFrame(),
+        "soy_default_tab": "-", "soy_tabs_map": {},
+        "df_soy_blocks": pd.DataFrame(), "df_soy_hourly": pd.DataFrame(),
+        "df_rt_hist_p": pd.DataFrame(), "df_rt_hist_c": pd.DataFrame(),
+        "df_dairy_hist_p": pd.DataFrame(), "df_dairy_hist_c": pd.DataFrame(),
+        "df_soy_hist": pd.DataFrame(),
+        "fsk_products": [], "master_products": []
+    }
+
     if creds is None:
         return {
             "df_cost": pd.DataFrame(),
             "cost_targets": {"부문": 1.54, "식품안전팀": 1.0, "품질관리팀": 0.54},
             "df_claim_trend": pd.DataFrame(),
             "df_claim_cat": pd.DataFrame(),
-            "proc_data": {
-                "rt_today": None, "rt_yest": None, "milk_date": "-", "ferm_date": "-",
-                "df_milk_pack": pd.DataFrame(), "df_ferm_pack": pd.DataFrame(),
-                "soy_default_tab": "-", "soy_tabs_map": {},
-                "df_soy_blocks": pd.DataFrame(), "df_soy_hourly": pd.DataFrame()
-            },
+            "proc_data": empty_proc,
             "df_sup_master": pd.DataFrame(),
             "df_sup_grade": pd.DataFrame(),
             "df_sup_under_c": pd.DataFrame(),
@@ -2236,13 +2489,37 @@ def load_all_sheets_parallel(today_cache_key: str) -> dict:
 
         df_cost, cost_targets, err_cost = f_cost.result()
         df_claim_trend, df_claim_cat, err_claim = f_claim.result()
-        rt_today, rt_yest, err_rt = f_rt.result()
-        df_milk, df_ferm, milk_dt, ferm_dt, err_milk = f_milk.result()
-        soy_def_tab, soy_map, df_soy_b, df_soy_h, err_soy = f_soy.result()
+        rt_today, rt_yest, df_rt_hp, df_rt_hc, fsk_prods, err_rt = f_rt.result()
+        df_milk, df_ferm, milk_dt, ferm_dt, df_dy_hp, df_dy_hc, dairy_prods, err_milk = f_milk.result()
+        soy_def_tab, soy_map, df_soy_b, df_soy_h, df_soy_hist, err_soy = f_soy.result()
         df_sup_m, df_sup_g, df_sup_uc, df_sup_ud, err_sup = f_sup.result()
         df_audit_sched, saved_manual_kpis, err_audit = f_audit.result()
         df_lbl, err_lbl = f_lbl.result()
         df_raw_sub, raw_m_cnt, err_raw = f_raw.result()
+
+    # 역추적용 마스터 제품 목록: [1순위] '제품명 식품안전나라' A열 전체 + [2순위] 유제품/누적DB 미등록 제품 보강
+    master_prods = []
+    seen_norm = set()
+
+    def add_prod_unique(p_str: str):
+        ps = str(p_str or "").strip()
+        if not ps or ps in ["-", "(비가동)", "(제품명 미기입)"]:
+            return
+        nk = clean_product_for_match(ps)
+        if nk and nk not in seen_norm:
+            seen_norm.add(nk)
+            master_prods.append(ps)
+
+    for fp in fsk_prods:
+        add_prod_unique(fp)
+    for dp in dairy_prods:
+        add_prod_unique(dp)
+    if not df_rt_hp.empty and "제품명" in df_rt_hp.columns:
+        for rp in df_rt_hp["제품명"].dropna().tolist():
+            add_prod_unique(rp)
+    if not df_dy_hp.empty and "제품명" in df_dy_hp.columns:
+        for dhp in df_dy_hp["제품명"].dropna().tolist():
+            add_prod_unique(dhp)
 
     errors = []
     for label_nm, er in [
@@ -2271,7 +2548,14 @@ def load_all_sheets_parallel(today_cache_key: str) -> dict:
             "soy_default_tab": soy_def_tab,
             "soy_tabs_map": soy_map,
             "df_soy_blocks": df_soy_b,
-            "df_soy_hourly": df_soy_h
+            "df_soy_hourly": df_soy_h,
+            "df_rt_hist_p": df_rt_hp,
+            "df_rt_hist_c": df_rt_hc,
+            "df_dairy_hist_p": df_dy_hp,
+            "df_dairy_hist_c": df_dy_hc,
+            "df_soy_hist": df_soy_hist,
+            "fsk_products": fsk_prods,
+            "master_products": master_prods
         },
         "df_sup_master": df_sup_m,
         "df_sup_grade": df_sup_g,
@@ -2304,13 +2588,12 @@ if BUNDLE_KEY not in st.session_state or st.session_state[BUNDLE_KEY].get("loade
                     border: 1px solid #DCE4EE; border-left: 5px solid #00205B;
                     border-radius: 10px; font-size: 15px; font-weight: 700; color: #00205B;
                     box-shadow: 0 2px 8px rgba(0, 32, 91, 0.08);">
-            ⏳ 연세유업 품질안전부문 KPI 실시간 데이터를 병렬로 불러오는 중입니다...
+            ⏳ 연세유업 품질안전부문 KPI 및 공정 이력 DB 데이터를 병렬로 불러오는 중입니다...
         </div>
         """,
         unsafe_allow_html=True
     )
     loaded_bundle = load_all_sheets_parallel(today_kst_str)
-    # 시트에 영구 저장된 수동 KPI 설정이 있으면 세션에 자동 반영
     for mk_k, mk_val in loaded_bundle.get("saved_manual_kpis", {}).items():
         if mk_k in st.session_state["manual_kpis"]:
             st.session_state["manual_kpis"][mk_k].update(mk_val)
@@ -2332,9 +2615,9 @@ df_label_status = bundle["df_label_status"]
 df_raw_sub = bundle["df_raw_sub"]
 raw_master_cnt = bundle["raw_master_cnt"]
 all_load_errors = bundle["errors"]
-# ============================ [PART 2 / 3 끝] ============================
+# ============================ [PART 2 / 4 끝] ============================
 # ==============================================================================
-# [PART 3 / 3] 지표 계산 · 메인 현황판(온도계·검사전 반영) · 세부 페이지 전체
+# [PART 3 / 4] 차트/카드 헬퍼 · 지난 이력 조회기 · 클레임 로트 역추적 엔진 · 메인 Summary 화면
 # ==============================================================================
 
 def draw_mini_bar(target_val: float, actual_val: float, suffix: str = "", bar_labels=("목표", "실적")):
@@ -2363,7 +2646,6 @@ def draw_mini_bar(target_val: float, actual_val: float, suffix: str = "", bar_la
 
 
 def get_active_audit_summary(df_sched: pd.DataFrame, today_str: str) -> dict:
-    """오늘(KST) 기준 당일 심사 -> 진행중 심사 -> 차기 예정 심사 -> 최근 종료 심사 순으로 대표 심사 추출"""
     if df_sched is None or df_sched.empty:
         return {
             "has_data": False,
@@ -2381,7 +2663,6 @@ def get_active_audit_summary(df_sched: pd.DataFrame, today_str: str) -> dict:
     df_w = df_sched.copy()
     df_w["_dt"] = pd.to_datetime(df_w["심사일자"], errors="coerce").dt.date
 
-    # 1순위: 금일 심사
     today_rows = df_w[df_w["_dt"] == today_dt]
     if not today_rows.empty:
         r = today_rows.iloc[0]
@@ -2399,7 +2680,6 @@ def get_active_audit_summary(df_sched: pd.DataFrame, today_str: str) -> dict:
             "row": r
         }
 
-    # 2순위: 현재 심사 진행 단계(심사중·서류심사중·현장심사중)에 있는 항목
     in_prog_rows = df_w[df_w["진행현황"].isin(["심사중", "서류심사중", "현장심사중"])]
     if not in_prog_rows.empty:
         r = in_prog_rows.iloc[0]
@@ -2418,7 +2698,6 @@ def get_active_audit_summary(df_sched: pd.DataFrame, today_str: str) -> dict:
             "row": r
         }
 
-    # 3순위: 오늘 이후 가장 가까운 예정 심사
     future_rows = df_w[df_w["_dt"].notna() & (df_w["_dt"] > today_dt)].sort_values("_dt", ascending=True)
     if not future_rows.empty:
         r = future_rows.iloc[0]
@@ -2437,7 +2716,6 @@ def get_active_audit_summary(df_sched: pd.DataFrame, today_str: str) -> dict:
             "row": r
         }
 
-    # 4순위: 가장 최근 지난 심사
     past_rows = df_w.sort_values("심사일자", ascending=False)
     r = past_rows.iloc[0]
     st_nm = r["진행현황"] if r["진행현황"] in AUDIT_STATUS_CONFIG else "심사종료"
@@ -2457,7 +2735,6 @@ def get_active_audit_summary(df_sched: pd.DataFrame, today_str: str) -> dict:
 
 
 def render_audit_kpi5_card(df_sched: pd.DataFrame, today_str: str):
-    """5번 심사점수 전용 카드: 상단 점수 유지 + 하단 당일/차기 심사 배너 및 온도계 게이지 바"""
     info = st.session_state["manual_kpis"]["kpi_5"]
     aud_sum = get_active_audit_summary(df_sched, today_str)
 
@@ -2552,7 +2829,6 @@ def render_manual_kpi_card(kpi_key: str):
 
 
 def render_team_cost_panel(container_col, team_name: str, bar_color: str, target_uk: float):
-    """세부 1번 원가절감 좌(식품안전팀)·우(품질관리팀) 개별 실적·기준선·추세 차트 렌더러"""
     act_col = f"{team_name}_실적(만원)"
     std_col = f"{team_name}_기준(만원)"
 
@@ -2587,32 +2863,22 @@ def render_team_cost_panel(container_col, team_name: str, bar_color: str, target
 
         fig_t = go.Figure()
         fig_t.add_trace(go.Bar(
-            x=df_cost["월"],
-            y=df_cost[act_col],
-            name=f"{team_name} 실적",
+            x=df_cost["월"], y=df_cost[act_col], name=f"{team_name} 실적",
             marker_color=bar_color,
             text=[f"{v:,.0f}" if v > 0 else "" for v in df_cost[act_col]],
             textposition="outside"
         ))
         fig_t.add_trace(go.Scatter(
-            x=df_cost["월"],
-            y=df_cost[std_col],
-            name="팀 월 기준선",
-            mode="lines",
-            line=dict(color="#DC2626", width=2.3, dash="dash")
+            x=df_cost["월"], y=df_cost[std_col], name="팀 월 기준선",
+            mode="lines", line=dict(color="#DC2626", width=2.3, dash="dash")
         ))
         fig_t.add_trace(go.Scatter(
-            x=df_cost["월"],
-            y=t_act_l,
-            name="실적 추세선",
-            mode="lines+markers",
-            line=dict(color="#7C3AED", width=2.6)
+            x=df_cost["월"], y=t_act_l, name="실적 추세선",
+            mode="lines+markers", line=dict(color="#7C3AED", width=2.6)
         ))
         if 0 <= t_last_i < 11:
             fig_t.add_trace(go.Scatter(
-                x=df_cost["월"],
-                y=t_fc_l,
-                name="잔여월 예상 추세",
+                x=df_cost["월"], y=t_fc_l, name="잔여월 예상 추세",
                 mode="lines+markers+text",
                 text=[f"{v:.0f}" if (v is not None and idx > t_last_i) else "" for idx, v in enumerate(t_fc_l)],
                 textposition="top center",
@@ -2627,8 +2893,7 @@ def render_team_cost_panel(container_col, team_name: str, bar_color: str, target
         fig_t.update_layout(
             height=370,
             title=f"📊 {team_name} 월별 실적·기준선 및 잔여월 추세 예측 (단위: 만원)",
-            paper_bgcolor="#FFFFFF",
-            plot_bgcolor="#FFFFFF",
+            paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
             margin=dict(l=20, r=20, t=48, b=30),
             yaxis=dict(range=[0, max_v * 1.25 if max_v > 0 else 1000]),
             legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1)
@@ -2637,10 +2902,483 @@ def render_team_cost_panel(container_col, team_name: str, bar_color: str, target
 
 
 # ==============================================================================
-# 7. 1~7번 지표 실시간 요약 집계
+# 7. 공정 현황 각 탭 하단 전용 [📅 지난 이력 날짜별 조회] & [🔍 클레임 로트 역추적] 렌더러
 # ==============================================================================
+def render_rt_history_section(df_rt_hp: pd.DataFrame, df_rt_hc: pd.DataFrame):
+    st.markdown("---")
+    st.subheader("📅 [누적 이력 DB] 지난 상온 공정관리 일보 날짜별 조회 (원본 탭 삭제 후에도 영구 보존)")
+    if df_rt_hp.empty:
+        st.info("아직 '_이력DB_상온생산' 숨김 탭에 누적된 과거 이력이 없습니다.")
+        return
 
-# (1) 원가절감 요약
+    date_pairs = (
+        df_rt_hp[["생산일자", "원본탭명"]]
+        .drop_duplicates()
+        .sort_values("생산일자", ascending=False)
+        .values.tolist()
+    )
+    opt_labels = [f"{d} (원본탭: {t})" for d, t in date_pairs]
+    sel_i = st.selectbox("조회할 과거 생산일자 선택 (최신순)", range(len(opt_labels)), format_func=lambda i: opt_labels[i], key="sel_rt_hist_dt")
+    sel_dt, sel_tab = date_pairs[sel_i]
+
+    sub_p = df_rt_hp[(df_rt_hp["생산일자"] == sel_dt) & (df_rt_hp["원본탭명"] == sel_tab)]
+    sub_c = (
+        df_rt_hc[(df_rt_hc["생산일자"] == sel_dt) & (df_rt_hc["원본탭명"] == sel_tab)]
+        if not df_rt_hc.empty else pd.DataFrame()
+    )
+
+    notes_found = []
+    for _, rp in sub_p.iterrows():
+        s_rem = str(rp.get("멸균특이사항", "")).strip()
+        d_mem = str(rp.get("당일전달사항", "")).strip()
+        if s_rem and s_rem not in ["-", "이상없음", "없음"]:
+            tag = f"[{rp.get('매칭멸균기', '-')}·{rp.get('포장호기', '-')} {rp.get('제품명', '')}] {s_rem}"
+            if tag not in notes_found:
+                notes_found.append(tag)
+        if d_mem and d_mem not in ["-", "없음"]:
+            mtag = f"[당일 전달사항] {d_mem}"
+            if mtag not in notes_found:
+                notes_found.append(mtag)
+
+    if notes_found:
+        st.markdown(
+            f"<div class='issue-card-warn'><b>📌 [{html.escape(sel_dt)} ({html.escape(sel_tab)})] 기록된 특이사항 ({len(notes_found)}건)</b><br>"
+            + "<br>".join([f"• {html.escape(x)}" for x in notes_found]) + "</div>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(f"<div class='issue-card-ok'><b>🟢 [{html.escape(sel_dt)} ({html.escape(sel_tab)})] 특이사항 없이 정상 생산 마감</b></div>", unsafe_allow_html=True)
+
+    hist_p_cols = [
+        {"key": "ho", "label": "포장호기", "width": "8%", "align": "center"},
+        {"key": "prod", "label": "생산 제품명", "width": "27%", "align": "left"},
+        {"key": "exp", "label": "표기 소비기한", "width": "13%", "align": "center"},
+        {"key": "time", "label": "포장 확인시간", "width": "11%", "align": "center"},
+        {"key": "st", "label": "상태", "width": "10%", "align": "center"},
+        {"key": "ster", "label": "매칭 멸균기 · 핵심 CCP", "width": "18%", "align": "center"},
+        {"key": "rem", "label": "호기·멸균 특이사항", "width": "13%", "align": "left"}
+    ]
+    hist_p_rows = []
+    for _, rp in sub_p.iterrows():
+        st_raw = str(rp.get("모니터링상태", ""))
+        if "완료" in st_raw:
+            st_disp, st_cls = "🟢 확인완료", "cell-green"
+        elif "누락" in st_raw:
+            st_disp, st_cls = "🔴 소비기한 누락", "cell-red"
+        else:
+            st_disp, st_cls = "🟡 확인시간 대기", "cell-yellow"
+
+        rem_v = str(rp.get("멸균특이사항", "이상없음")).strip() or "이상없음"
+        ster_sum = f"{rp.get('매칭멸균기', '-')} | {rp.get('멸균핵심수치_요약', '-')}"
+        hist_p_rows.append({
+            "ho": {"text": rp.get("포장호기", "-"), "cls": ""},
+            "prod": {"text": rp.get("제품명", "-"), "cls": ""},
+            "exp": {"text": rp.get("표기소비기한_원문", "-"), "cls": "cell-green" if st_cls == "cell-green" else st_cls},
+            "time": {"text": rp.get("포장확인시간", "-"), "cls": st_cls},
+            "st": {"text": st_disp, "cls": st_cls},
+            "ster": {"text": ster_sum, "cls": "cell-green" if rp.get("매칭멸균기", "-") != "-" else ""},
+            "rem": {"text": rem_v, "cls": "cell-yellow" if rem_v not in ["이상없음", "없음", "-"] else "cell-green"}
+        })
+    st.markdown(render_html_table(hist_p_cols, hist_p_rows), unsafe_allow_html=True)
+
+    if not sub_c.empty:
+        with st.expander(f"🔥 [{sel_dt}] 멸균기(CCP-1B/2P) 및 포장기(CCP-3B) 세부 모니터링 기록 보기 ({len(sub_c)}건)"):
+            st.dataframe(sub_c.drop(columns=["최종백업일시"], errors="ignore"), use_container_width=True, hide_index=True)
+
+
+def render_dairy_history_section(df_dy_hp: pd.DataFrame, df_dy_hc: pd.DataFrame):
+    st.markdown("---")
+    st.subheader("📅 [누적 이력 DB] 지난 우유·발효유 포장일보 날짜별 조회 (결재 후 탭 삭제분 자동 보존)")
+    if df_dy_hp.empty and df_dy_hc.empty:
+        st.info("아직 '_이력DB_유제품포장' 숨김 탭에 누적된 이력이 없습니다.")
+        return
+
+    all_dates = sorted(
+        list(
+            set(df_dy_hp["생산일자"].dropna().tolist() if not df_dy_hp.empty else [])
+            | set(df_dy_hc["생산일자"].dropna().tolist() if not df_dy_hc.empty else [])
+        ),
+        reverse=True
+    )
+    if not all_dates:
+        st.info("조회 가능한 날짜 이력이 없습니다.")
+        return
+
+    dc1, dc2 = st.columns([1.3, 1.7])
+    with dc1:
+        sel_d_dt = st.selectbox("조회할 유제품 생산일자 선택 (최신순)", all_dates, key="sel_dairy_hist_dt")
+    with dc2:
+        sel_d_line = st.radio("라인 필터", ["전체 (우유+발효유)", "우유", "발효유"], horizontal=True, key="rad_dairy_hist_line")
+
+    sub_dp = df_dy_hp[df_dy_hp["생산일자"] == sel_d_dt] if not df_dy_hp.empty else pd.DataFrame()
+    sub_dc = df_dy_hc[df_dy_hc["생산일자"] == sel_d_dt] if not df_dy_hc.empty else pd.DataFrame()
+
+    if sel_d_line != "전체 (우유+발효유)":
+        if not sub_dp.empty:
+            sub_dp = sub_dp[sub_dp["라인구분"] == sel_d_line]
+        if not sub_dc.empty:
+            sub_dc = sub_dc[sub_dc["라인구분"] == sel_d_line]
+
+    if not sub_dc.empty:
+        ptime_lines, rem_lines = [], []
+        for _, cr in sub_dc.iterrows():
+            cat = str(cr.get("기록분류", ""))
+            if cat == "포장생산시간":
+                ptime_lines.append(f"[{cr.get('라인구분', '')}] {cr.get('세부항목', '')} : {cr.get('기록내용_수치', '-')}")
+            elif cat == "특이사항":
+                rv = str(cr.get("특이사항", "이상없음")).strip()
+                if rv and rv not in ["이상없음", "-"]:
+                    rem_lines.append(f"[{cr.get('라인구분', '')}] {cr.get('세부항목', '')} : {rv}")
+
+        ptime_html = " &nbsp;|&nbsp; ".join([html.escape(x) for x in ptime_lines]) if ptime_lines else "기록된 포장 생산시간 없음"
+        rem_html = "<br>".join([f"• ⚠️ {html.escape(x)}" for x in rem_lines]) if rem_lines else "• 🟢 포장 특이사항 없음 (이상없음)"
+        box_cls = "issue-card-warn" if rem_lines else "issue-card-ok"
+        st.markdown(
+            f"<div class='{box_cls}'><b>⏱️ [{html.escape(sel_d_dt)}] 포장별 생산시간 :</b> {ptime_html}<br>{rem_html}</div>",
+            unsafe_allow_html=True
+        )
+
+    if not sub_dp.empty:
+        dy_hist_cols = [
+            {"key": "ln", "label": "라인/유형", "width": "11%", "align": "center"},
+            {"key": "prod", "label": "제품명 (용량)", "width": "25%", "align": "left"},
+            {"key": "time", "label": "확인시간", "width": "9%", "align": "center"},
+            {"key": "tank", "label": "Tank번호", "width": "9%", "align": "center"},
+            {"key": "exp", "label": "표기 소비기한", "width": "13%", "align": "center"},
+            {"key": "lbl", "label": "표시사항", "width": "7%", "align": "center"},
+            {"key": "seal", "label": "접착 및 외관", "width": "11%", "align": "center"},
+            {"key": "vol", "label": "용량", "width": "5%", "align": "center"},
+            {"key": "sens", "label": "관능", "width": "5%", "align": "center"},
+            {"key": "jdg", "label": "판정", "width": "5%", "align": "center"}
+        ]
+        dy_hist_rows = []
+        for _, dr in sub_dp.iterrows():
+            jdg_v = str(dr.get("판정", "적합")).strip()
+            j_cls = "cell-red" if "부적합" in jdg_v else ("cell-green" if "적합" in jdg_v else "cell-yellow")
+            t_v = str(dr.get("확인시간", "-")).strip()
+            dy_hist_rows.append({
+                "ln": {"text": f"{dr.get('라인구분', '')}\n({dr.get('세부유형', '')})", "cls": ""},
+                "prod": {"text": dr.get("제품명", "-"), "cls": ""},
+                "time": {"text": t_v, "cls": "cell-green" if t_v not in ["", "-"] else "cell-yellow"},
+                "tank": {"text": dr.get("Tank번호", "-"), "cls": ""},
+                "exp": {"text": dr.get("표기소비기한_원문", "-"), "cls": "cell-green"},
+                "lbl": {"text": dr.get("표시사항", "-"), "cls": "cell-green" if dr.get("표시사항", "-") not in ["", "-"] else ""},
+                "seal": {"text": dr.get("접착및외관", "-"), "cls": "cell-green" if dr.get("접착및외관", "-") not in ["", "-"] else ""},
+                "vol": {"text": dr.get("제품용량", "-"), "cls": "cell-green" if dr.get("제품용량", "-") not in ["", "-"] else ""},
+                "sens": {"text": dr.get("관능", "-"), "cls": "cell-green" if dr.get("관능", "-") not in ["", "-"] else ""},
+                "jdg": {"text": jdg_v, "cls": j_cls}
+            })
+        st.markdown(render_html_table(dy_hist_cols, dy_hist_rows), unsafe_allow_html=True)
+
+    ccp_only = sub_dc[sub_dc["기록분류"] == "CCP모니터링"] if (not sub_dc.empty and "기록분류" in sub_dc.columns) else pd.DataFrame()
+    if not ccp_only.empty:
+        st.markdown(f"##### 🛡️ [{sel_d_dt}] 살균기(전처리) 및 금속검출기 CCP 검증 모니터링 이력")
+        ccp_cols = [
+            {"key": "ln", "label": "라인", "width": "10%", "align": "center"},
+            {"key": "item", "label": "CCP 설비·항목", "width": "24%", "align": "center"},
+            {"key": "time", "label": "확인시간", "width": "12%", "align": "center"},
+            {"key": "val", "label": "측정 수치 (유량 · 균질압 · 살균온도 · 냉각온도 등)", "width": "54%", "align": "left"}
+        ]
+        ccp_rows = [
+            {
+                "ln": {"text": r.get("라인구분", "-"), "cls": ""},
+                "item": {"text": r.get("세부항목", "-"), "cls": ""},
+                "time": {"text": r.get("확인시간", "-"), "cls": "cell-green" if str(r.get("확인시간", "-")) not in ["", "-"] else ""},
+                "val": {"text": r.get("기록내용_수치", "-"), "cls": "cell-green"}
+            }
+            for _, r in ccp_only.iterrows()
+        ]
+        st.markdown(render_html_table(ccp_cols, ccp_rows), unsafe_allow_html=True)
+
+
+def render_soy_history_section(df_soy_hist: pd.DataFrame):
+    st.markdown("---")
+    st.subheader("📅 [누적 이력 DB] 지난 두유 배양검사 날짜별 조회 (탭 날짜 역산 보정 · 삭제 탭 영구 보존)")
+    if df_soy_hist.empty:
+        st.info("아직 '_이력DB_두유배양' 숨김 탭에 누적된 과거 이력이 없습니다.")
+        return
+
+    insp_col_nm = "확정검사일_탭기준" if "확정검사일_탭기준" in df_soy_hist.columns else "검사일_표기"
+    sc1, sc2 = st.columns([1.2, 1.8])
+    with sc1:
+        mode_soy = st.radio("조회 날짜 기준", ["검사일(하단 시트탭 날짜) 기준", "실제 생산일자(5일·7일 역산) 기준"], horizontal=True, key="rad_soy_hist_mode")
+
+    if "검사일" in mode_soy and insp_col_nm in df_soy_hist.columns:
+        avail_d = sorted(df_soy_hist[insp_col_nm].dropna().unique().tolist(), reverse=True)
+        with sc2:
+            sel_sd = st.selectbox("조회할 배양검사일(탭 기준) 선택", avail_d, key="sel_soy_hist_insp")
+        sub_s = df_soy_hist[df_soy_hist[insp_col_nm] == sel_sd]
+    else:
+        avail_d = sorted(df_soy_hist["생산일자"].dropna().unique().tolist(), reverse=True)
+        with sc2:
+            sel_sd = st.selectbox("조회할 실제 생산일자 선택", avail_d, key="sel_soy_hist_prod")
+        sub_s = df_soy_hist[df_soy_hist["생산일자"] == sel_sd]
+
+    soy_h_cols = [
+        {"key": "tab", "label": "원본탭(검사일)", "width": "9%", "align": "center"},
+        {"key": "ho", "label": "포장기", "width": "6%", "align": "center"},
+        {"key": "inc", "label": "배양구분", "width": "9%", "align": "center"},
+        {"key": "item", "label": "품목명 (용량)", "width": "21%", "align": "left"},
+        {"key": "pdt", "label": "실제 생산일", "width": "9%", "align": "center"},
+        {"key": "exp", "label": "소비기한", "width": "9%", "align": "center"},
+        {"key": "time", "label": "생산 시작~종료 (가동)", "width": "11%", "align": "center"},
+        {"key": "qty", "label": "검사수량", "width": "6%", "align": "center"},
+        {"key": "wrt", "label": "작성/검사자", "width": "8%", "align": "center"},
+        {"key": "st", "label": "진행상태", "width": "6%", "align": "center"},
+        {"key": "jdg", "label": "오염/판정", "width": "6%", "align": "center"}
+    ]
+    soy_h_rows = []
+    for _, sr in sub_s.iterrows():
+        st_txt = str(sr.get("진행상태", "")).strip()
+        if st_txt == "검사전":
+            st_disp, st_cls = "🟡 검사전", "cell-yellow"
+            jdg_disp = "검사전"
+        elif st_txt == "부적합" or "부적합" in str(sr.get("판정", "")):
+            st_disp, st_cls = "🔴 부적합", "cell-red"
+            jdg_disp = f"{sr.get('오염수량', '-')} / {sr.get('판정', '-')}"
+        else:
+            st_disp, st_cls = "🟢 검사완료", "cell-green"
+            jdg_disp = f"{sr.get('오염수량', '0 개')} / {sr.get('판정', '적합')}"
+
+        vol_s = str(sr.get("용량_mL", "-")).strip()
+        item_full = f"{sr.get('품목명', '-')} ({vol_s}mL)" if vol_s not in ["", "-"] else str(sr.get("품목명", "-"))
+        insp_dt_s = str(sr.get(insp_col_nm, "-"))
+        soy_h_rows.append({
+            "tab": {"text": f"{sr.get('원본탭명', '-')}\n({insp_dt_s[5:] if len(insp_dt_s) >= 10 else insp_dt_s})", "cls": ""},
+            "ho": {"text": sr.get("포장기", "-"), "cls": ""},
+            "inc": {"text": sr.get("배양구분", "-"), "cls": ""},
+            "item": {"text": item_full, "cls": ""},
+            "pdt": {"text": sr.get("생산일자", "-"), "cls": ""},
+            "exp": {"text": sr.get("표기소비기한_원문", "-"), "cls": ""},
+            "time": {"text": f"{sr.get('생산시작_종료', '-')}\n({sr.get('실가동시간', '-')})", "cls": ""},
+            "qty": {"text": sr.get("총검사수량", "0"), "cls": "cell-green" if st_cls == "cell-green" else ""},
+            "wrt": {"text": f"{sr.get('작성자', '-')}\n/ {sr.get('검사자', '-')}", "cls": st_cls},
+            "st": {"text": st_disp, "cls": st_cls},
+            "jdg": {"text": jdg_disp, "cls": st_cls}
+        })
+    st.markdown(render_html_table(soy_h_cols, soy_h_rows), unsafe_allow_html=True)
+
+
+def render_lot_traceability_tab(p_data: dict):
+    """4번째 신규 탭: '제품명 식품안전나라' A열 제품명 + 소비기한 기반 전 공정(생산·CCP·특이사항·배양 가동시간) 통합 역추적"""
+    master_prods = p_data.get("master_products", [])
+    fsk_cnt = len(p_data.get("fsk_products", []))
+    df_rt_hp = p_data.get("df_rt_hist_p", pd.DataFrame())
+    df_rt_hc = p_data.get("df_rt_hist_c", pd.DataFrame())
+    df_soy_h = p_data.get("df_soy_hist", pd.DataFrame())
+    df_dy_hp = p_data.get("df_dairy_hist_p", pd.DataFrame())
+    df_dy_hc = p_data.get("df_dairy_hist_c", pd.DataFrame())
+
+    st.markdown(f"""
+    <div class="trace-hero-box">
+        <b style="font-size:16px; color:#00205B;">🔍 클레임·품질 문의 대비 로트(제품명 + 소비기한) 원스톱 이력 역추적</b><br>
+        • <b>제품명 표준 연동 :</b> 상온공정일보 내 <b>[제품명 식품안전나라] 탭 A열 품목({fsk_cnt:,}종)</b> 및 유제품·일보 품목을 통합 연동했습니다. 드롭다운 클릭 후 글자를 타이핑하면 즉시 검색됩니다.<br>
+        • <b>자동 교차 조회 범위 :</b> ① 실제 생산일자·포장호기·확인시간 &nbsp;|&nbsp; ② 살균/멸균기·포장기 CCP 및 <b>당일 현장 특이사항</b> &nbsp;|&nbsp; ③ 두유 배양검사 <b>실제 생산 시작~종료 시간(실가동시간)</b>·오염·판정 결과
+    </div>
+    """, unsafe_allow_html=True)
+
+    default_opt = "전체 (제품 미선택 · 소비기한으로만 검색)"
+    prod_options = [default_opt] + master_prods
+
+    q_c1, q_c2, q_c3 = st.columns([1.8, 1.1, 1.1])
+    with q_c1:
+        sel_prod = st.selectbox("1️⃣ 제품명 선택 ('제품명 식품안전나라' A열 연동 · 타이핑 검색 가능)", prod_options, index=0, key="lot_sel_prod")
+    with q_c2:
+        in_exp = st.text_input("2️⃣ 소비기한 입력 (예: 2027-05-13, 27.05.13, 11.25)", placeholder="연.월.일 또는 월.일 입력", key="lot_in_exp")
+    with q_c3:
+        in_kw = st.text_input("3️⃣ 추가 키워드 필터 (선택사항)", placeholder="부분 품목명 직접 검색 시 입력", key="lot_in_kw")
+
+    has_cond = (sel_prod != default_opt) or bool(in_exp.strip()) or bool(in_kw.strip())
+    if not has_cond:
+        st.info("👆 위에서 **제품명**을 선택하거나 **소비기한**을 입력하면 상온·유제품·배양검사 누적 이력 DB에서 일치하는 모든 로트 정보를 즉시 찾아옵니다.")
+        return
+
+    exp_q = parse_exp_query_info(in_exp)
+
+    # 1) 상온 생산 이력 매칭
+    matched_rt = pd.DataFrame()
+    if not df_rt_hp.empty:
+        mask_rt = df_rt_hp.apply(
+            lambda r: is_product_match(r.get("제품명", ""), sel_prod, in_kw)
+            and is_exp_match(r.get("표기소비기한_원문", ""), r.get("표준소비기한_검색용", ""), exp_q),
+            axis=1
+        )
+        matched_rt = df_rt_hp[mask_rt].sort_values("생산일자", ascending=False)
+
+    # 2) 두유 배양 이력 매칭 (직접 소비기한+제품명 일치분 + 상온 매칭 로트의 동일 [생산일자+포장호기/품목] 교차 일치분 통합)
+    matched_soy = pd.DataFrame()
+    if not df_soy_h.empty:
+        direct_mask_soy = df_soy_h.apply(
+            lambda r: is_product_match(r.get("품목명", ""), sel_prod, in_kw)
+            and is_exp_match(r.get("표기소비기한_원문", ""), r.get("표준소비기한_검색용", ""), exp_q),
+            axis=1
+        )
+        cross_mask_soy = pd.Series([False] * len(df_soy_h), index=df_soy_h.index)
+        if not matched_rt.empty:
+            rt_keys = [(str(r["생산일자"]).strip(), str(r["포장호기"]).strip(), str(r["제품명"]).strip()) for _, r in matched_rt.iterrows()]
+            cross_mask_soy = df_soy_h.apply(
+                lambda sr: any(
+                    (str(sr.get("생산일자", "")).strip() == r_dt)
+                    and (
+                        str(sr.get("포장기", "")).strip() == r_ho
+                        or is_product_match(sr.get("품목명", ""), r_pnm, "")
+                    )
+                    for r_dt, r_ho, r_pnm in rt_keys
+                ),
+                axis=1
+            )
+        matched_soy = df_soy_h[direct_mask_soy | cross_mask_soy].drop_duplicates().sort_values("생산일자", ascending=False)
+
+    # 3) 유제품(우유·발효유) 포장 이력 매칭
+    matched_dy = pd.DataFrame()
+    if not df_dy_hp.empty:
+        mask_dy = df_dy_hp.apply(
+            lambda r: is_product_match(r.get("제품명", ""), sel_prod, in_kw)
+            and is_exp_match(r.get("표기소비기한_원문", ""), r.get("표준소비기한_검색용", ""), exp_q),
+            axis=1
+        )
+        matched_dy = df_dy_hp[mask_dy].sort_values("생산일자", ascending=False)
+
+    total_hits = len(matched_rt) + len(matched_soy) + len(matched_dy)
+    if total_hits == 0:
+        st.warning("입력하신 조건(제품명·소비기한)과 일치하는 생산·배양 이력이 누적 DB에서 발견되지 않았습니다. 소비기한을 '월.일(예: 05.13)' 형태로 줄이거나 제품 선택을 '전체'로 두고 검색해 보세요.")
+        return
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric("🧃 상온 공정일보 매칭", f"{len(matched_rt):,} 건")
+    s2.metric("🧪 두유 배양검사 매칭 (실가동시간)", f"{len(matched_soy):,} 건")
+    s3.metric("🥛 유제품 포장일보 매칭", f"{len(matched_dy):,} 건")
+
+    # --- 결과 A: 상온 제품 생산 · 멸균기/포장기 CCP · 당일 특이사항 ---
+    if not matched_rt.empty:
+        st.markdown("### 🧃 1. 상온 공정관리 일보 — 생산 호기 · 멸균 CCP · 당일 특이사항")
+        rt_trace_cols = [
+            {"key": "dt", "label": "생산일자 (탭)", "width": "11%", "align": "center"},
+            {"key": "ho", "label": "포장호기", "width": "7%", "align": "center"},
+            {"key": "prod", "label": "생산 제품명", "width": "22%", "align": "left"},
+            {"key": "exp", "label": "표기 소비기한", "width": "11%", "align": "center"},
+            {"key": "time", "label": "포장 확인시간", "width": "9%", "align": "center"},
+            {"key": "ster", "label": "매칭 멸균기 · 핵심 CCP 수치", "width": "18%", "align": "center"},
+            {"key": "rem", "label": "포장/멸균기 특이사항 & 당일 전달사항", "width": "22%", "align": "left"}
+        ]
+        rt_trace_rows = []
+        for _, r in matched_rt.iterrows():
+            s_rem = str(r.get("멸균특이사항", "이상없음")).strip()
+            d_mem = str(r.get("당일전달사항", "없음")).strip()
+            comb_rem_parts = []
+            if s_rem and s_rem not in ["이상없음", "없음", "-"]:
+                comb_rem_parts.append(f"[설비/멸균] {s_rem}")
+            if d_mem and d_mem not in ["없음", "-"]:
+                comb_rem_parts.append(f"[전달] {d_mem}")
+            comb_rem = "\n".join(comb_rem_parts) if comb_rem_parts else "이상없음"
+
+            rt_trace_rows.append({
+                "dt": {"text": f"{r.get('생산일자', '-')}\n({r.get('원본탭명', '-')})", "cls": ""},
+                "ho": {"text": r.get("포장호기", "-"), "cls": ""},
+                "prod": {"text": r.get("제품명", "-"), "cls": ""},
+                "exp": {"text": r.get("표기소비기한_원문", "-"), "cls": "cell-green"},
+                "time": {"text": r.get("포장확인시간", "-"), "cls": "cell-green" if ":" in str(r.get("포장확인시간", "")) else "cell-yellow"},
+                "ster": {"text": f"{r.get('매칭멸균기', '-')} | {r.get('멸균핵심수치_요약', '-')}", "cls": "cell-green"},
+                "rem": {"text": comb_rem, "cls": "cell-yellow" if comb_rem != "이상없음" else "cell-green"}
+            })
+        st.markdown(render_html_table(rt_trace_cols, rt_trace_rows), unsafe_allow_html=True)
+
+        if not df_rt_hc.empty:
+            rt_dt_tabs = matched_rt[["생산일자", "원본탭명"]].drop_duplicates()
+            ccp_sub = df_rt_hc.merge(rt_dt_tabs, on=["생산일자", "원본탭명"], how="inner")
+            if not ccp_sub.empty:
+                with st.expander(f"🔎 해당 생산일 멸균기(CCP-1B/2P) · 포장기(CCP-3B) 전체 세부 기록 펼쳐보기 ({len(ccp_sub)}건)"):
+                    st.dataframe(ccp_sub.drop(columns=["최종백업일시"], errors="ignore"), use_container_width=True, hide_index=True)
+
+    # --- 결과 B: 두유 배양검사 — 실 생산 시작~종료 시간 · 검사수량 · 오염/판정 ---
+    if not matched_soy.empty:
+        st.markdown("### 🧪 2. 두유 배양검사 일보 — 실 생산 시작~종료 시간 · 오염수량 · 판정 이력")
+        insp_c = "확정검사일_탭기준" if "확정검사일_탭기준" in matched_soy.columns else "검사일_표기"
+        soy_trace_cols = [
+            {"key": "pdt", "label": "실제 생산일", "width": "9%", "align": "center"},
+            {"key": "idt", "label": "검사일 (탭)", "width": "9%", "align": "center"},
+            {"key": "ho", "label": "포장기/배양", "width": "10%", "align": "center"},
+            {"key": "item", "label": "품목명", "width": "20%", "align": "left"},
+            {"key": "exp", "label": "표기 소비기한", "width": "9%", "align": "center"},
+            {"key": "run", "label": "실 생산 시작 ~ 종료 (가동시간)", "width": "14%", "align": "center"},
+            {"key": "qty", "label": "총 검사수량", "width": "7%", "align": "center"},
+            {"key": "who", "label": "작성 / 검사자", "width": "8%", "align": "center"},
+            {"key": "jdg", "label": "상태 / 판정", "width": "7%", "align": "center"},
+            {"key": "rem", "label": "배양 특이사항", "width": "7%", "align": "left"}
+        ]
+        soy_trace_rows = []
+        for _, sr in matched_soy.iterrows():
+            st_s = str(sr.get("진행상태", "")).strip()
+            if st_s == "검사전":
+                s_cls, j_txt = "cell-yellow", "🟡 검사전"
+            elif st_s == "부적합" or "부적합" in str(sr.get("판정", "")):
+                s_cls, j_txt = "cell-red", f"🔴 {sr.get('오염수량', '-')} / {sr.get('판정', '-')}"
+            else:
+                s_cls, j_txt = "cell-green", f"🟢 {sr.get('오염수량', '0 개')} / {sr.get('판정', '적합')}"
+
+            rem_s = str(sr.get("특이사항", "없음")).strip() or "없음"
+            soy_trace_rows.append({
+                "pdt": {"text": sr.get("생산일자", "-"), "cls": ""},
+                "idt": {"text": f"{sr.get(insp_c, '-')}\n({sr.get('원본탭명', '-')})", "cls": ""},
+                "ho": {"text": f"{sr.get('포장기', '-')}\n{sr.get('배양구분', '-')}", "cls": ""},
+                "item": {"text": sr.get("품목명", "-"), "cls": ""},
+                "exp": {"text": sr.get("표기소비기한_원문", "-"), "cls": ""},
+                "run": {"text": f"{sr.get('생산시작_종료', '-')}\n({sr.get('실가동시간', '-')})", "cls": "cell-green" if "~" in str(sr.get("생산시작_종료", "")) else ""},
+                "qty": {"text": f"{sr.get('총검사수량', '0')} 개", "cls": ""},
+                "who": {"text": f"{sr.get('작성자', '-')}\n/ {sr.get('검사자', '-')}", "cls": s_cls},
+                "jdg": {"text": j_txt, "cls": s_cls},
+                "rem": {"text": rem_s, "cls": "cell-yellow" if rem_s not in ["없음", "이상없음", "-"] else ""}
+            })
+        st.markdown(render_html_table(soy_trace_cols, soy_trace_rows), unsafe_allow_html=True)
+
+    # --- 결과 C: 유제품 포장일보 — 확인시간 · Tank · 포장 생산시간 · 살균기 CCP ---
+    if not matched_dy.empty:
+        st.markdown("### 🥛 3. 유제품 포장 공정관리 일보 — 확인시간 · 포장 생산시간 · 살균기 CCP · 특이사항")
+        dy_trace_cols = [
+            {"key": "dt", "label": "생산일자", "width": "10%", "align": "center"},
+            {"key": "ln", "label": "라인구분", "width": "9%", "align": "center"},
+            {"key": "prod", "label": "제품명 (용량)", "width": "21%", "align": "left"},
+            {"key": "exp", "label": "표기 소비기한", "width": "10%", "align": "center"},
+            {"key": "time", "label": "확인시간 / Tank", "width": "11%", "align": "center"},
+            {"key": "insp", "label": "표시·접착·용량·관능·판정", "width": "15%", "align": "center"},
+            {"key": "ccp", "label": "당일 포장 생산시간 · 살균기 CCP · 특이사항", "width": "24%", "align": "left"}
+        ]
+        dy_trace_rows = []
+        for _, dr in matched_dy.iterrows():
+            d_dt = str(dr.get("생산일자", "")).strip()
+            d_ln = str(dr.get("라인구분", "")).strip()
+            ccp_lines = []
+            has_warn_rem = False
+            if not df_dy_hc.empty:
+                c_match = df_dy_hc[(df_dy_hc["생산일자"] == d_dt) & (df_dy_hc["라인구분"] == d_ln)]
+                for _, cr in c_match.iterrows():
+                    rcat = str(cr.get("기록분류", ""))
+                    if rcat == "포장생산시간":
+                        ccp_lines.append(f"[생산시간] {cr.get('기록내용_수치', '-')}")
+                    elif rcat == "CCP모니터링":
+                        ccp_lines.append(f"[{cr.get('세부항목', 'CCP')}] {cr.get('기록내용_수치', '-')}")
+                    elif rcat == "특이사항":
+                        rv = str(cr.get("특이사항", "이상없음")).strip()
+                        if rv and rv not in ["이상없음", "-"]:
+                            has_warn_rem = True
+                            ccp_lines.append(f"[특이사항] {rv}")
+
+            insp_summary = f"표시:{dr.get('표시사항', '-')} | {dr.get('접착및외관', '-')} | 관능:{dr.get('관능', '-')} ({dr.get('판정', '적합')})"
+            dy_trace_rows.append({
+                "dt": {"text": d_dt, "cls": ""},
+                "ln": {"text": f"{d_ln}\n({dr.get('세부유형', '')})", "cls": ""},
+                "prod": {"text": dr.get("제품명", "-"), "cls": ""},
+                "exp": {"text": dr.get("표기소비기한_원문", "-"), "cls": "cell-green"},
+                "time": {"text": f"{dr.get('확인시간', '-')}\n(Tank: {dr.get('Tank번호', '-')})", "cls": "cell-green"},
+                "insp": {"text": insp_summary, "cls": "cell-red" if "부적합" in insp_summary else "cell-green"},
+                "ccp": {"text": "\n".join(ccp_lines) if ccp_lines else "이상없음", "cls": "cell-yellow" if has_warn_rem else ""}
+            })
+        st.markdown(render_html_table(dy_trace_cols, dy_trace_rows), unsafe_allow_html=True)
+
+
+# ==============================================================================
+# 8. 1~7번 지표 실시간 요약 집계
+# ==============================================================================
 cost_target_uk = cost_targets["부문"]
 cost_actual_man = round(float(df_cost["부문_실적(만원)"].sum()), 1) if not df_cost.empty else 0.0
 cost_actual_uk = round(cost_actual_man / 10000, 2)
@@ -2653,7 +3391,6 @@ cost_proj_man = round(cost_actual_man + sum(cost_full_line[cost_last_i + 1:]), 1
 cost_proj_uk = round(cost_proj_man / 10000, 2)
 sig_cost = "green" if (cost_actual_uk >= cost_target_uk or cost_proj_uk >= cost_target_uk) else ("red" if not df_cost.empty else "gray")
 
-# (2) 클레임 요약
 claim_target_ppm = 1.12
 row_26_sum = df_claim_cat[(df_claim_cat["연도"] == "2026년") & (df_claim_cat["유형"] == "합계")] if not df_claim_cat.empty else pd.DataFrame()
 claim_actual_ppm = float(row_26_sum["합계_PPM"].values[0]) if not row_26_sum.empty else 0.0
@@ -2672,7 +3409,6 @@ elif claim_slope > 0.03:
 else:
     sig_claim = "green"
 
-# (3) 공정 현황 및 특이사항 요약 (두유 배양 검사자 기입 유무 반영)
 rt_t = proc_data["rt_today"]
 rt_y = proc_data["rt_yest"]
 rt_t_tab = rt_t["tab_title"] if rt_t else "-"
@@ -2687,6 +3423,9 @@ red_rt_cnt = sum(1 for r in rt_t_lines if r["_cls"] == "cell-red") + (
 df_milk_run = proc_data["df_milk_pack"][proc_data["df_milk_pack"]["가동여부"].str.contains("금일생산", na=False)] if not proc_data["df_milk_pack"].empty else pd.DataFrame()
 df_ferm_run = proc_data["df_ferm_pack"][proc_data["df_ferm_pack"]["가동여부"].str.contains("금일생산", na=False)] if not proc_data["df_ferm_pack"].empty else pd.DataFrame()
 active_dairy_cnt = len(df_milk_run) + len(df_ferm_run)
+# 결재 후 당일 우유/발효유 탭을 이미 삭제한 시간대라면 숨김 DB의 금일 백업 건수로 보완 표시
+if active_dairy_cnt == 0 and not proc_data["df_dairy_hist_p"].empty:
+    active_dairy_cnt = int((proc_data["df_dairy_hist_p"]["생산일자"] == today_kst_str).sum())
 
 df_soy_b_main = proc_data["df_soy_blocks"]
 soy_blocks_cnt = len(df_soy_b_main)
@@ -2711,7 +3450,6 @@ elif wait_rt_cnt > 0 or soy_uninspected_cnt > 0 or len(today_real_notes) > 0:
 else:
     sig_process = "green"
 
-# (4) 협력업체 서류심사 요약
 target_exec = 88.3
 total_sup_cnt = len(df_sup_master)
 unsub_sup_cnt = int((df_sup_master["점수"] == "미제출").sum()) if not df_sup_master.empty else 0
@@ -2722,7 +3460,6 @@ guide_sup_cnt = int((df_sup_master["결과"] == "지도").sum()) if not df_sup_m
 out_sup_cnt = int((df_sup_master["결과"] == "등급 외").sum()) if not df_sup_master.empty else 0
 sig_supplier = "green" if sup_exec_rate >= target_exec else ("red" if total_sup_cnt > 0 else "gray")
 
-# (6) 표시사항 진행 현황 요약
 if not df_label_status.empty:
     df_rev_now = df_label_status[df_label_status["분류"] == "식품안전팀 검토중"]
     df_comp_now = df_label_status[df_label_status["분류"] == "검토완료(확인필)"]
@@ -2739,7 +3476,6 @@ else:
     reviewing_cnt, completed_cnt, broken_date_cnt, all_rev_items = 0, 0, 0, []
 sig_label = "yellow" if reviewing_cnt >= 5 else ("green" if not df_label_status.empty else "gray")
 
-# (7) 원자재 표시사항 DB 요약
 sub_raw_cnt = len(df_raw_sub)
 verified_raw_cnt = len(df_raw_sub[df_raw_sub["검증상태"].astype(str).str.contains("완료|적합", na=False)]) if ("검증상태" in df_raw_sub.columns and not df_raw_sub.empty) else 0
 allergy_raw_cnt = len(df_raw_sub[df_raw_sub["신규알레르기"].astype(str).str.strip() != ""]) if ("신규알레르기" in df_raw_sub.columns and not df_raw_sub.empty) else 0
@@ -2755,7 +3491,7 @@ if "ax_brief_text" not in st.session_state:
         f"[원가절감] 누적 {cost_actual_uk}억({cost_rate}%), 연말 추세 예상 {cost_proj_uk}억 | "
         f"[클레임] 2026년 누적 {claim_actual_ppm}ppm({claim_total_cnt}건), 2월 예상 추세 {claim_feb_pred}ppm | "
         f"[공정] 상온({rt_t_tab}) {active_rt_cnt}건 가동(특이사항 금일 {len(today_real_notes)}건·전일 {len(yest_real_notes)}건), "
-        f"유제품 {active_dairy_cnt}품목 생산, 배양({proc_data['soy_default_tab']}탭) {soy_brief_state} | "
+        f"유제품 {active_dairy_cnt}건 기록, 배양({proc_data['soy_default_tab']}탭) {soy_brief_state} | "
         f"[협력업체 서류심사] 승인 {ok_sup_cnt}·지도 {guide_sup_cnt}·등급외 {out_sup_cnt} ({sup_exec_rate}%) | "
         f"[표시사항] 누적 완료 {completed_cnt:,}건, 현재 검토중 {reviewing_cnt}건"
     )
@@ -2763,7 +3499,7 @@ if "ax_brief_text" not in st.session_state:
 
 
 # ==============================================================================
-# [화면 1] 메인 Summary 대시보드 (12개 KPI, 상단 제목 바 클릭 시 세부 이동)
+# [화면 1] 메인 Summary 대시보드 (12개 KPI 그리드)
 # ==============================================================================
 if st.session_state.current_view == "main":
     top_c1, top_c2 = st.columns([8.4, 1.6])
@@ -2853,7 +3589,7 @@ if st.session_state.current_view == "main":
             <div style="position:relative; padding: 2px 4px 0 4px;">
                 {get_signal_dot_html(sig_process)}
                 <div style="font-size:12.5px; font-weight:700; color:#475569; margin-bottom:5px;">
-                    기준탭 : 상온({html.escape(rt_t_tab)}) · 배양({html.escape(proc_data['soy_default_tab'])})
+                    기준탭 : 상온({html.escape(rt_t_tab)}) · 배양({html.escape(proc_data['soy_default_tab'])}) · 🔍로트추적
                 </div>
             </div>
             <div class="proc-hybrid-wrap">
@@ -2863,7 +3599,7 @@ if st.session_state.current_view == "main":
                         <span class="badge-pill {rt_badge_cls}">{rt_badge_txt}</span>
                     </div>
                     <div class="proc-check-row">
-                        <span><span class="proc-check-label">유제품 포장</span><span class="proc-check-meta">(금일 {active_dairy_cnt}품목)</span></span>
+                        <span><span class="proc-check-label">유제품 포장</span><span class="proc-check-meta">(금일 {active_dairy_cnt}건)</span></span>
                         <span class="badge-pill {dairy_badge_cls}">{dairy_badge_txt}</span>
                     </div>
                     <div class="proc-check-row">
@@ -2950,10 +3686,9 @@ if st.session_state.current_view == "main":
         render_manual_kpi_card("kpi_11")
     with r3_c4:
         render_manual_kpi_card("kpi_12")
-
-
+# ============================ [PART 3 / 4 끝] ============================
 # ==============================================================================
-# [화면 2] 세부 페이지 (1~12번 전체 Drill-Down 및 시트 영구 저장 편집기)
+# [PART 4 / 4] 세부 페이지 전체 (기존 공정 화면 100% 유지 + 탭별 지난 이력 조회 + 4번째 로트 역추적 탭)
 # ==============================================================================
 else:
     nav_c1, nav_c2 = st.columns([8.4, 1.6])
@@ -3025,7 +3760,7 @@ else:
             st.subheader("📋 월별·팀별 원가절감 상세 수치 테이블")
             st.dataframe(df_cost.drop(columns=["_기록여부"], errors="ignore"), use_container_width=True, hide_index=True)
 
-    # [세부 2] 클레임 발생률
+    # [세부 2] 클레임 발생률 (기존 3개 탭 그대로 유지)
     elif view == "claim":
         st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>2. 클레임 발생률 — 전사 추이·AI 예상 추세도 및 부문별 분석</span></div>", unsafe_allow_html=True)
         if df_claim_cat.empty:
@@ -3205,19 +3940,21 @@ else:
                 df_cv = df_claim_cat if yr_opt == "전체" else df_claim_cat[df_claim_cat["연도"] == yr_opt]
                 st.dataframe(df_cv, use_container_width=True, hide_index=True)
 
-    # [세부 3] 공정 현황 및 특이사항 (두유 배양 하단 탭 날짜 기준 + 검사자 미입력 '검사전' 구분)
+    # [세부 3] 공정 현황 및 특이사항 (기존 1~3번 탭 상단 100% 보존 + 각 탭 하단 날짜별 이력 + 4번째 로트 역추적 탭)
     elif view == "process":
-        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>3. 공정 현황 및 특이사항 — 금일·전일 생산 및 CCP·배양 실시간 관제</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>3. 공정 현황 및 특이사항 — 실시간 관제 · 날짜별 누적 이력 · 클레임 로트 역추적</span></div>", unsafe_allow_html=True)
 
-        tab_p1, tab_p2, tab_p3 = st.tabs([
+        tab_p1, tab_p2, tab_p3, tab_p4 = st.tabs([
             f"🧃 [상온] 상온제품 공정 관리 일보 (금일 {rt_t_tab} & 전일 {rt_y_tab})",
             "🥛 [우유/발효유] 유제품 포장 공정관리 일보",
-            f"🧪 [상온] 두유 배양검사 일보 (최신 작성 탭: {proc_data['soy_default_tab']})"
+            f"🧪 [상온] 두유 배양검사 일보 (최신 작성 탭: {proc_data['soy_default_tab']})",
+            "🔍 클레임 로트 역추적 (제품명·소비기한)"
         ])
 
+        # --- 탭 1: 상온제품 공정 관리 일보 (상단 기존 화면 100% 그대로 유지 + 하단 지난 날짜별 이력 조회) ---
         with tab_p1:
             if rt_t is None:
-                st.warning("상온제품 공정 관리 일보 시트 데이터를 불러오지 못했습니다.")
+                st.warning("상온제품 공정 관리 일보 현재 탭 데이터를 불러오지 못했습니다. 아래 누적 이력 DB를 확인해 주세요.")
             else:
                 b_left, b_right = st.columns(2)
                 with b_left:
@@ -3332,6 +4069,10 @@ else:
                     ]
                     st.markdown(render_html_table(yest_cols, yest_rows_html), unsafe_allow_html=True)
 
+            # 기존 상온 화면 하단에 날짜별 지난 이력 조회 섹션 추가
+            render_rt_history_section(proc_data["df_rt_hist_p"], proc_data["df_rt_hist_c"])
+
+        # --- 탭 2: 유제품 포장 공정관리 일보 (상단 기존 화면 100% 그대로 유지 + 하단 날짜별 지난 이력 조회) ---
         with tab_p2:
             sub_m, sub_f = st.tabs([f"🥛 우유 포장 ({proc_data['milk_date']})", f"🍶 발효유 포장 ({proc_data['ferm_date']})"])
             dairy_cols = [
@@ -3374,23 +4115,33 @@ else:
                 return out_r
 
             with sub_m:
-                only_run_m = st.checkbox("금일 실제 생산 품목만 보기 (00.00 제외)", value=True, key="chk_milk")
-                df_m_v = proc_data["df_milk_pack"]
-                if only_run_m and not df_m_v.empty:
-                    df_m_v = df_m_v[df_m_v["가동여부"].str.contains("금일생산", na=False)]
-                st.markdown(render_html_table(dairy_cols, build_dairy_html_rows(df_m_v)), unsafe_allow_html=True)
+                if proc_data["df_milk_pack"].empty:
+                    st.info("현재 시트에 활성화된 '우유' 작업 탭이 없습니다 (결재 후 삭제됨). 바로 아래 [누적 이력 DB]에서 당일 및 지난 날짜 기록을 모두 확인하실 수 있습니다.")
+                else:
+                    only_run_m = st.checkbox("금일 실제 생산 품목만 보기 (00.00 제외)", value=True, key="chk_milk")
+                    df_m_v = proc_data["df_milk_pack"]
+                    if only_run_m and not df_m_v.empty:
+                        df_m_v = df_m_v[df_m_v["가동여부"].str.contains("금일생산", na=False)]
+                    st.markdown(render_html_table(dairy_cols, build_dairy_html_rows(df_m_v)), unsafe_allow_html=True)
 
             with sub_f:
-                only_run_f = st.checkbox("금일 실제 생산 품목만 보기 (00.00 제외)", value=True, key="chk_ferm")
-                df_f_v = proc_data["df_ferm_pack"]
-                if only_run_f and not df_f_v.empty:
-                    df_f_v = df_f_v[df_f_v["가동여부"].str.contains("금일생산", na=False)]
-                st.markdown(render_html_table(dairy_cols, build_dairy_html_rows(df_f_v)), unsafe_allow_html=True)
+                if proc_data["df_ferm_pack"].empty:
+                    st.info("현재 시트에 활성화된 '발효유' 작업 탭이 없습니다 (결재 후 삭제됨). 바로 아래 [누적 이력 DB]에서 당일 및 지난 날짜 기록을 모두 확인하실 수 있습니다.")
+                else:
+                    only_run_f = st.checkbox("금일 실제 생산 품목만 보기 (00.00 제외)", value=True, key="chk_ferm")
+                    df_f_v = proc_data["df_ferm_pack"]
+                    if only_run_f and not df_f_v.empty:
+                        df_f_v = df_f_v[df_f_v["가동여부"].str.contains("금일생산", na=False)]
+                    st.markdown(render_html_table(dairy_cols, build_dairy_html_rows(df_f_v)), unsafe_allow_html=True)
 
+            # 기존 유제품 화면 하단에 날짜별 지난 이력 조회 섹션 추가
+            render_dairy_history_section(proc_data["df_dairy_hist_p"], proc_data["df_dairy_hist_c"])
+
+        # --- 탭 3: 두유 배양검사 일보 (상단 기존 화면 100% 그대로 유지 + 하단 날짜별 지난 이력 조회) ---
         with tab_p3:
             soy_map = proc_data["soy_tabs_map"]
             if not soy_map:
-                st.warning("두유 배양검사 일보 날짜 탭 데이터를 불러오지 못했습니다.")
+                st.warning("두유 배양검사 일보 현재 날짜 탭 데이터를 불러오지 못했습니다. 아래 누적 이력 DB를 확인해 주세요.")
             else:
                 tab_keys = list(soy_map.keys())
                 def_idx = tab_keys.index(proc_data["soy_default_tab"]) if proc_data["soy_default_tab"] in tab_keys else 0
@@ -3469,6 +4220,13 @@ else:
                     with st.expander("⏰ 시간대별(08시~07시) 샘플·Strip·Paper 체크 상세 보기"):
                         st.dataframe(df_sh, use_container_width=True, hide_index=True)
 
+            # 기존 두유 배양 화면 하단에 날짜별 지난 이력 조회 섹션 추가
+            render_soy_history_section(proc_data["df_soy_hist"])
+
+        # --- 탭 4 (신규): 클레임 로트 역추적 ('제품명 식품안전나라' A열 제품명 + 소비기한 통합 조회) ---
+        with tab_p4:
+            render_lot_traceability_tab(proc_data)
+
     # [세부 4] 협력업체 관리
     elif view == "supplier":
         st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>4. 협력업체 관리 — 2026년 원·부자재 및 OEM 서류심사 확정 집계</span></div>", unsafe_allow_html=True)
@@ -3503,14 +4261,13 @@ else:
             with uc2:
                 st.dataframe(df_sup_under_d, use_container_width=True, hide_index=True)
 
-    # [세부 5] 심사점수 및 일정 · 실시간 진행현황(온도계) 통합 관리 ('심사점수 및 일정 관리 DB' 시트 연동)
+    # [세부 5] 심사점수 및 일정 · 실시간 진행현황(온도계) 통합 관리
     elif view == "kpi_5":
         info5 = st.session_state["manual_kpis"]["kpi_5"]
         aud_sum = get_active_audit_summary(df_audit_sched, today_kst_str)
 
         st.markdown("<div class='yonsei-header-bar'><span class='yonsei-title'>5. 심사점수 — 연간 심사 일정 등록 · 실시간 진행 온도계 · 점수 관리</span></div>", unsafe_allow_html=True)
 
-        # 상단 실시간 대표 심사 진행 온도계 대형 배너
         st.markdown(f"""
         <div class="forecast-box">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -3946,4 +4703,4 @@ else:
                     else:
                         st.warning(msg_save)
                     st.rerun()
-# ============================ [PART 3 / 3 끝] ============================
+# ============================ [PART 4 / 4 끝] ============================
