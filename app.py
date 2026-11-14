@@ -2,7 +2,7 @@ import html
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import gspread
 import numpy as np
@@ -21,7 +21,7 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 # ==============================================================================
-# 한국 표준시(KST, UTC+9) 고정 유틸리티 (외부 패키지 의존성 없음)
+# 한국 표준시(KST, UTC+9) 고정 유틸리티
 # ==============================================================================
 KST_TZ = timezone(timedelta(hours=9))
 
@@ -32,7 +32,7 @@ def now_kst() -> datetime:
 
 
 # ==============================================================================
-# 1. 페이지 기본 설정 및 세션 상태 초기화
+# 1. 페이지 기본 설정 및 상수·초기 상태 정의
 # ==============================================================================
 st.set_page_config(
     page_title="2026 업적 KPI 현황판 | 연세유업 품질안전부문",
@@ -50,14 +50,13 @@ def set_view(view_name: str):
     st.session_state.current_view = view_name
 
 
-AUDIT_HEADERS = ["심사ID", "심사일자", "심사명", "진행현황", "심사점수", "비고", "최종수정일시"]
-AUDIT_STAGE_ORDER = ["심사준비중", "심사중", "서류심사중", "현장심사중", "심사종료"]
-AUDIT_STAGE_INFO = {
-    "심사준비중": {"pct": 20, "color": "#3B82F6", "badge_cls": "badge-warn", "icon": "📋"},
-    "심사중": {"pct": 50, "color": "#F59E0B", "badge_cls": "badge-warn", "icon": "🔍"},
-    "서류심사중": {"pct": 75, "color": "#0284C7", "badge_cls": "badge-warn", "icon": "📂"},
-    "현장심사중": {"pct": 80, "color": "#EA580C", "badge_cls": "badge-warn", "icon": "🏭"},
-    "심사종료": {"pct": 100, "color": "#10B981", "badge_cls": "badge-ok", "icon": "✅"}
+AUDIT_STATUS_OPTIONS = ["심사준비중", "심사중", "서류심사중", "현장심사중", "심사종료"]
+AUDIT_STATUS_META = {
+    "심사준비중": {"pct": 20, "color": "#3B82F6", "bg": "#DBEAFE", "fg": "#1E40AF"},
+    "심사중": {"pct": 45, "color": "#F59E0B", "bg": "#FEF3C7", "fg": "#92400E"},
+    "서류심사중": {"pct": 65, "color": "#EA580C", "bg": "#FFEDD5", "fg": "#9A3412"},
+    "현장심사중": {"pct": 80, "color": "#E11D48", "bg": "#FFE4E6", "fg": "#9F1239"},
+    "심사종료": {"pct": 100, "color": "#10B981", "bg": "#DCFCE7", "fg": "#166534"},
 }
 
 DEFAULT_MANUAL_KPIS = {
@@ -179,16 +178,19 @@ SHEET_NAMES = {
     "cost": "원가절감 현황",
     "claim": "클레임 건수",
     "supplier": "협력업체 심사 결과 DB",
+    "audit": "심사점수 및 일정 관리 DB",
     "label_status": "표시사항 현황",
     "raw_label_db": "원자재 표시사항 DB",
     "process_soy": "[상온]두유 배양검사 일보",
     "process_rt": "[상온]상온제품 공정 관리 일보",
-    "process_milk": "[우유] 유제품 포장 공정관리 일보",
-    "audit_db": "심사점수 및 일정 관리 DB"
+    "process_milk": "[우유] 유제품 포장 공정관리 일보"
 }
 
+AUDIT_SCHED_HEADERS = ["고유ID", "심사일자", "심사내용", "진행현황", "결과점수", "비고", "수정일시"]
+KPI_CFG_HEADERS = ["KPI키", "목표문구", "실적문구", "배지문구", "목표수치", "실적수치", "신호등", "메모제목", "메모내용", "수정일시"]
+
 # ==============================================================================
-# 2. 연세유업 브랜드 컬러 CSS (상단 고정 툴바 가림 원천 차단 + 온도계 진행바)
+# 2. 연세유업 브랜드 컬러 CSS (상단 고정 툴바 가림 원천 차단 + 온도계 게이지 스타일)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -348,6 +350,7 @@ st.markdown("""
         background-color: #94A3B8;
         border: 2px solid #475569;
     }
+    /* 3번 카드 전용: 공정 체크리스트 + 특이사항 전광판 */
     .proc-hybrid-wrap {
         height: 226px;
         display: flex;
@@ -389,7 +392,6 @@ st.markdown("""
     .badge-ok { background-color: #DCFCE7; color: #166534; border: 1px solid #86EFAC; }
     .badge-warn { background-color: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
     .badge-err { background-color: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
-    .badge-info { background-color: #E0F2FE; color: #075985; border: 1px solid #7DD3FC; }
     .proc-issue-board {
         margin-top: 6px;
         background-color: #F8FAFC;
@@ -403,6 +405,63 @@ st.markdown("""
         line-height: 1.5;
         color: #1E293B;
     }
+    /* 5번 심사점수 전용: 온도계형 진행 게이지 + 일정 보드 */
+    .audit-thermo-box {
+        background-color: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-top: 4px;
+        height: 146px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .thermo-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 4px 0 2px 0;
+    }
+    .thermo-bulb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 6px rgba(0, 0, 0, 0.18);
+    }
+    .thermo-track {
+        flex-grow: 1;
+        height: 12px;
+        background-color: #E2E8F0;
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        margin-left: -4px;
+    }
+    .thermo-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.35s ease;
+    }
+    .thermo-steps {
+        display: flex;
+        justify-content: space-between;
+        font-size: 10.5px;
+        color: #64748B;
+        font-weight: 600;
+        padding: 0 2px;
+    }
+    .audit-mini-list {
+        border-top: 1px dashed #CBD5E1;
+        padding-top: 4px;
+        max-height: 54px;
+        overflow-y: auto;
+        font-size: 11.6px;
+        line-height: 1.45;
+        color: #334155;
+    }
+    /* 카드 내 스크롤 목록 박스 */
     .card-scroll-box {
         background-color: #F8FAFC;
         border: 1px solid #E2E8F0;
@@ -421,75 +480,6 @@ st.markdown("""
     }
     .card-scroll-item:last-child {
         border-bottom: none;
-    }
-    /* 5번 심사점수 카드 전용 온도계 게이지 & 일정 보드 */
-    .audit-card-box {
-        background-color: #F8FAFC;
-        border: 1px solid #DCE4EE;
-        border-radius: 8px;
-        padding: 8px 10px;
-        height: 146px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        margin-top: 4px;
-    }
-    .thermo-wrap {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        margin: 4px 0;
-    }
-    .thermo-track {
-        flex: 1;
-        height: 14px;
-        background-color: #E2E8F0;
-        border-radius: 999px;
-        overflow: hidden;
-        border: 1px solid #CBD5E1;
-        position: relative;
-    }
-    .thermo-fill {
-        height: 100%;
-        border-radius: 999px;
-        transition: width 0.35s ease;
-    }
-    .audit-mini-list {
-        height: 62px;
-        overflow-y: auto;
-        border-top: 1px solid #E2E8F0;
-        padding-top: 4px;
-        font-size: 11.8px;
-        line-height: 1.48;
-        color: #334155;
-    }
-    /* 세부 5번 대형 단계 트래커 */
-    .stage-step-bar {
-        display: flex;
-        gap: 8px;
-        margin: 10px 0 16px 0;
-    }
-    .stage-step-item {
-        flex: 1;
-        text-align: center;
-        padding: 9px 6px;
-        border-radius: 8px;
-        font-size: 13px;
-        font-weight: 700;
-        border: 1px solid #CBD5E1;
-        background-color: #F8FAFC;
-        color: #64748B;
-    }
-    .stage-step-active {
-        background: linear-gradient(90deg, #00205B 0%, #0052A5 100%);
-        color: #FFFFFF !important;
-        border-color: #00205B;
-        box-shadow: 0 3px 8px rgba(0, 56, 118, 0.25);
-    }
-    .stage-step-done {
-        background-color: #DCFCE7;
-        color: #166534;
-        border-color: #86EFAC;
     }
     .forecast-box {
         background-color: #FFFFFF;
@@ -586,8 +576,22 @@ st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. Google 인증 및 429 보호 시트 입출력 유틸리티
+# 3. Google 인증 및 429 할당량 보호 시트 유틸리티
 # ==============================================================================
+def api_call_with_retry(func, *args, **kwargs):
+    """Google Sheets 429 Read/Write 할당량 초과 시 자동 대기 후 최대 4회 재시도"""
+    for attempt in range(4):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            err_s = str(e)
+            if "429" in err_s or "Quota exceeded" in err_s or "RATE_LIMIT_EXCEEDED" in err_s:
+                time.sleep(2.3 * (attempt + 1))
+                continue
+            raise
+    return func(*args, **kwargs)
+
+
 def build_google_credentials():
     if "google_oauth" in st.secrets:
         try:
@@ -620,19 +624,6 @@ def build_google_credentials():
     return None, "Streamlit Secrets에 [google_oauth] 또는 [gcp_service_account] 설정이 없습니다."
 
 
-def api_call_with_retry(func, *args, **kwargs):
-    """Google Sheets 429 할당량 초과 발생 시 자동 대기 후 최대 4회 재시도"""
-    for attempt in range(4):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                time.sleep(2.5 * (attempt + 1))
-                continue
-            raise
-    return func(*args, **kwargs)
-
-
 def open_sheet_threadsafe(creds, sheet_urls_map: dict, key_or_title: str):
     if creds is None:
         return None, "인증 자격증명이 없습니다."
@@ -648,7 +639,7 @@ def open_sheet_threadsafe(creds, sheet_urls_map: dict, key_or_title: str):
                     return api_call_with_retry(client.open_by_url, url_val), None
                 return api_call_with_retry(client.open_by_key, url_val), None
             except Exception as e:
-                errors.append(f"URL/ID 열기 실패({key_or_title}): {e}")
+                errors.append(f"URL/KEY 열기 실패({key_or_title}): {e}")
 
     target_title = SHEET_NAMES.get(key_or_title, key_or_title)
     for candidate in [target_title, target_title.strip(), target_title.strip() + " "]:
@@ -660,15 +651,13 @@ def open_sheet_threadsafe(creds, sheet_urls_map: dict, key_or_title: str):
     return None, " / ".join(errors)
 
 
-def get_values_safe(ws):
+def get_values_safe(ws, unformatted: bool = False):
+    if unformatted:
+        try:
+            return api_call_with_retry(ws.get_all_values, value_render_option="UNFORMATTED_VALUE")
+        except Exception:
+            return api_call_with_retry(ws.get_all_values)
     return api_call_with_retry(ws.get_all_values)
-
-
-def get_values_unformatted(ws):
-    try:
-        return api_call_with_retry(ws.get_all_values, value_render_option="UNFORMATTED_VALUE")
-    except Exception:
-        return api_call_with_retry(ws.get_all_values)
 
 
 def to_float(val, default=0.0):
@@ -708,7 +697,7 @@ def get_signal_dot_html(status_code: str) -> str:
 
 
 # ==============================================================================
-# 4. 추세선·예상 추세도 계산 및 HTML 관제 테이블 렌더러
+# 4. 추세선·예상 추세도 계산 및 HTML 관제 테이블·온도계 렌더러
 # ==============================================================================
 def calc_trend_and_forecast_split(y_values: list, is_recorded_list: list = None, total_periods: int = 12):
     if is_recorded_list is not None:
@@ -767,8 +756,38 @@ def render_html_table(columns_spec: list, rows_data: list) -> str:
     """
 
 
+def select_featured_audit(df_sched: pd.DataFrame, today_str: str):
+    """오늘(KST) 심사 -> 현재 진행중 심사 -> 가장 가까운 예정 심사 -> 최근 심사 순으로 대표 심사 선정"""
+    if df_sched is None or df_sched.empty:
+        return None, "일정 미등록"
+
+    df_s = df_sched.copy()
+    df_s["심사일자"] = df_s["심사일자"].astype(str).str.strip()
+
+    today_rows = df_s[df_s["심사일자"] == today_str]
+    if not today_rows.empty:
+        return today_rows.iloc[0].to_dict(), "🚨 금일 심사"
+
+    active_rows = df_s[df_s["진행현황"].isin(["심사중", "서류심사중", "현장심사중"])].sort_values("심사일자")
+    if not active_rows.empty:
+        return active_rows.iloc[0].to_dict(), "🔥 진행중"
+
+    future_rows = df_s[df_s["심사일자"] > today_str].sort_values("심사일자", ascending=True)
+    if not future_rows.empty:
+        r0 = future_rows.iloc[0].to_dict()
+        try:
+            d_diff = (datetime.strptime(r0["심사일자"], "%Y-%m-%d").date() - datetime.strptime(today_str, "%Y-%m-%d").date()).days
+            d_tag = f"📅 예정 (D-{d_diff})"
+        except Exception:
+            d_tag = "📅 예정 심사"
+        return r0, d_tag
+
+    past_rows = df_s.sort_values("심사일자", ascending=False)
+    return past_rows.iloc[0].to_dict(), "☑️ 최근 심사"
+
+
 # ==============================================================================
-# 5. 실시간 구글 시트 데이터 파서 (1~7번 + 5번 심사점수 및 일정 관리 DB)
+# 5. 실시간 구글 시트 데이터 파서 및 저장 함수
 # ==============================================================================
 
 # [1] 원가절감 현황
@@ -780,7 +799,7 @@ def fetch_cost_sheet(creds, sheet_urls_map):
 
     try:
         ws = api_call_with_retry(sh.get_worksheet, 0)
-        rows = get_values_unformatted(ws)
+        rows = get_values_safe(ws, unformatted=True)
         targets = default_targets.copy()
 
         if len(rows) >= 1:
@@ -844,17 +863,19 @@ def fetch_claim_sheet(creds, sheet_urls_map):
         return pd.DataFrame(), pd.DataFrame(), err
 
     try:
-        target_ws = None
-        for w in api_call_with_retry(sh.worksheets):
+        ws_list = api_call_with_retry(sh.worksheets)
+        target_ws = ws_list[0] if ws_list else None
+        for w in ws_list:
+            if len(ws_list) == 1:
+                target_ws = w
+                break
             sample = get_values_safe(w)[:8]
             flat_txt = " ".join([" ".join(r) for r in sample])
             if "유형" in flat_txt and ("3월" in flat_txt or "생산" in flat_txt):
                 target_ws = w
                 break
-        if target_ws is None:
-            target_ws = api_call_with_retry(sh.get_worksheet, 0)
 
-        rows = get_values_unformatted(target_ws)
+        rows = get_values_safe(target_ws, unformatted=True)
         header_row_idx = 1
         for idx, r in enumerate(rows[:10]):
             r_str = [str(c).strip() for c in r]
@@ -915,19 +936,3 @@ def fetch_claim_sheet(creds, sheet_urls_map):
         df_category = pd.DataFrame(cat_list)
         if df_category.empty:
             return pd.DataFrame(), pd.DataFrame(), "클레임 시트에서 유효한 데이터를 찾지 못했습니다."
-
-        years_found = sorted(df_category["연도"].unique().tolist(), reverse=True)
-        yr_cur = "2026년" if "2026년" in years_found else years_found[0]
-        yr_prev = "2025년" if "2025년" in years_found else (years_found[1] if len(years_found) > 1 else "")
-
-        row_cur = df_category[(df_category["연도"] == yr_cur) & (df_category["유형"] == "합계")]
-        row_prev = df_category[(df_category["연도"] == yr_prev) & (df_category["유형"] == "합계")] if yr_prev else pd.DataFrame()
-
-        trend_rows = []
-        for m in FISCAL_MONTHS:
-            c26 = int(row_cur[f"{m}_건수"].values[0]) if not row_cur.empty else 0
-            prod26 = int(row_cur[f"{m}_생산수량"].values[0]) if not row_cur.empty else 0
-            p26 = float(row_cur[f"{m}_PPM"].values[0]) if not row_cur.empty else 0.0
-            c25 = int(row_prev[f"{m}_건수"].values[0]) if not row_prev.empty else 0
-            p25 = float(row_prev[f"{m}_PPM"].values[0]) if not row_prev.empty else 0.0
-            trend_rows.append
